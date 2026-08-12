@@ -3,6 +3,7 @@ import { auth, settings, system, skin } from '../ipc'
 import { Dialog } from './dialog'
 import type { IGameSettings } from '../../electron/handlers/settings'
 import shared from '../shared'
+import packageJson from '../../package.json'
 
 const resolutionList = [
   { label: 'Auto (default)', value: '854x480', width: 854, height: 480 },
@@ -28,7 +29,7 @@ export async function initSettings() {
   initFormValues(sysInfo.resolution)
 
   const versionElem = document.getElementById('version')
-  if (versionElem) versionElem.innerText = `Katapulte v${sysInfo.version}`
+  if (versionElem) versionElem.innerText = `Katapulte v${packageJson.version}`
 }
 
 function initUIListeners() {

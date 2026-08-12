@@ -17,6 +17,9 @@ Ce projet correspond à la V1 de la base de lancement. Il a été pensé pour po
 - [Scripts disponibles](#scripts-disponibles)
 - [Lancer le projet en développement](#lancer-le-projet-en-développement)
 - [Construire les builds](#construire-les-builds)
+- [Roadmap](#roadmap)
+- [GitHub Actions - packaging multi-plateforme](#github-actions---packaging-multi-plateforme)
+- [Release Guide](#release-guide)
 - [Configuration clé du launcher](#configuration-clé-du-launcher)
 - [Points d’entrée pour reprendre la base](#points-dentrée-pour-reprendre-la-base)
 - [Bonnes pratiques de développement](#bonnes-pratiques-de-développement)
@@ -209,6 +212,150 @@ npm run build
 ```
 
 Les livrables sont généralement générés dans le dossier `release/` selon la configuration Electron Builder.
+
+## Roadmap
+
+### V1 — Base du launcher
+
+- [x] Authentification Microsoft
+- [x] Gestion de session et refresh
+- [x] Sélection des profils
+- [x] Démarrage du jeu avec Java / mémoire / résolution
+- [x] Gestion des skin, cape et avatar
+- [x] Système de news / maintenance
+- [x] Gestion des mises à jour / bootstraps
+- [x] Interface login, home, settings et maintenance
+
+### V2 — Polissage et stabilité
+
+- [ ] Nettoyage du code et refacto des composants UI
+- [ ] Optimisation des performances d’ouverture de l’application
+- [ ] Gestion des erreurs détaillée et logs utilisateur
+- [ ] Meilleure validation des états de connexion et de session
+- [ ] Gestion des téléchargements / mises à jour plus robuste
+
+### V3 — Expérience et distribution
+
+- [ ] Packagings multi-plateformes automatisés et reproductibles
+- [ ] Release notes plus lisibles et automatiques
+- [ ] Déploiement/gestion versionning plus propre
+- [ ] Ajout de modules de contenu / gestion administrateur
+- [ ] Expérience de mise à jour plus transparente pour les joueurs
+
+## GitHub Actions - packaging multi-plateforme
+
+Le projet est prévu pour être packagé automatiquement via GitHub Actions sur plusieurs OS, ce qui permet de produire les builds Windows, macOS et Linux sans devoir les générer manuellement sur chaque machine.
+
+### Objectif
+
+- compiler automatiquement le projet à chaque release,
+- générer les fichiers installables pour plusieurs plateformes,
+- publier les artefacts sur GitHub,
+- déclencher les mises à jour via Electron Builder / GitHub Releases.
+
+### Exemple de workflow recommandé
+
+```yaml
+name: Build Electron App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build app
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: katapulte-launcher-${{ matrix.os }}
+          path: |
+            release/*
+            dist-electron/**
+```
+
+### Bonnes pratiques
+
+- utiliser un tag Git versionné (`v1.0.3`, `v1.1.0`, etc.),
+- ne pas publier une release sans incrémenter la version dans `package.json`,
+- conserver un build Windows, macOS et Linux séparés dans les artefacts,
+- sécuriser les variables d’environnement si tu utilises GitHub Releases / signing,
+- vérifier les builds sur les systèmes cibles avant de finaliser une vraie release publique.
+
+> Le packaging multiplateforme via GitHub Actions est une excellente manière de rendre la base de Katapulte plus sérieuse, plus reproductible et plus facile à maintenir par un autre développeur.
+
+## Release Guide
+
+### 1. Mettre à jour le numéro de version
+
+C’est l’étape la plus importante. Pour que le système de mise à jour automatique comprenne qu’il y a une nouveauté, il faut incrémenter la version de ton application.
+
+Ouvre le fichier `package.json` situé à la racine de ton projet.
+
+Change la pour ton nouveau numéro de version, par exemple : `"version": "1.x.x"`.
+
+Sauvegarde le fichier.
+
+> Règle d’or : ne fais jamais de nouvelle release sans changer ce numéro, sinon `electron-builder` peut écraser tes anciens fichiers sur GitHub et tes joueurs ne recevront pas la mise à jour.
+
+### 2. Sauvegarder et envoyer le code (Commit & Push)
+
+Maintenant que tes modifications et ton nouveau numéro de version sont prêts, il faut les envoyer sur GitHub pour déclencher la compilation.
+
+Dans le terminal :
+
+```bash
+git add .
+git commit -m "Release v1.0.3 : Ajout de la nouvelle interface"
+git push origin main
+```
+
+### 3. Vérifier la publication / build
+
+Après le push :
+
+- GitHub Actions se déclenche automatiquement,
+- le build est lancé selon la configuration du workflow,
+- les artefacts sont générés,
+- la release peut ensuite être créée ou mise à jour avec les binaires produits.
+
+### 4. Créer la release GitHub
+
+Une fois le build terminé :
+
+1. aller dans l’onglet Releases de GitHub,
+2. créer une nouvelle release,
+3. sélectionner le tag correspondant (ex. `v1.0.3`),
+4. ajouter les notes de version,
+5. attacher les fichiers buildés,
+6. publier la release.
+
+### 5. Vérifier la mise à jour du launcher
+
+Ensuite, un utilisateur qui lance le logiciel va recevoir la nouvelle version automatiquement si la mise à jour est correctement branchée côté Electron / GitHub Releases.
 
 ## Configuration clé du launcher
 
