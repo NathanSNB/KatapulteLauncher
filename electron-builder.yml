@@ -1,0 +1,70 @@
+appId: com.katapulte.launcher
+productName: 'KatapulteLauncher'
+copyright: 'Copyright © 2026 Nathan & KatapulteDev'
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "dist"
+  - "dist-electron"
+  - "package.json"
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+  - "!**/{appveyor.yml,.travis.yml,circle.yml}"
+  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+
+publish:
+  provider: github
+  owner: 'NathanSNB'
+  repo: 'KatapulteLauncher'
+
+win:
+  target: nsis
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: 'Katapulte'
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: true
+  license: build/license.rtf
+  artifactName: '${productName} Setup ${version}.${ext}'
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/icon.icns
+  category: public.app-category.games
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  artifactName: '${productName} ${version}.${ext}'
+
+dmg:
+  title: 'Install Katapulte'
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+linux:
+  target:
+    - AppImage
+  icon: build/icon.png
+  category: Game
+  artifactName: '${productName}-${version}-linux.${ext}'

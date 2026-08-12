@@ -1,0 +1,36 @@
+{
+  "name": "katapulte-launcher",
+  "productName": "KatapulteLauncher",
+  "author": "Nathan & KatapulteDev",
+  "description": "Katapulte Launcher",
+  "private": true,
+  "version": "1.0.2",
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && electron-builder",
+    "build:win": "vite build && electron-builder --win",
+    "build:mac": "vite build && electron-builder --mac",
+    "build:mac-universal": "vite build && electron-builder --mac --universal",
+    "build:lin": "vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.2",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
+    "eml-lib": "^2.3.5",
+    "marked": "^18.0.3",
+    "skinview3d": "^3.4.1"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "electron": "^41.5.0",
+    "electron-builder": "^26.8.1",
+    "prettier": "^3.8.3",
+    "sass-embedded": "^1.99.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10",
+    "vite-plugin-electron": "^0.29.1"
+  }
+}
