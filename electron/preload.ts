@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('api', {
     launch: (payload: { account: Account; settings: IGameSettings; profileSlug: string }) => {
       ipcRenderer.invoke('game:launch', payload)
     },
+    openModsFolder: (profileSlug: string): Promise<{ success: boolean; message?: string; path?: string }> =>
+      ipcRenderer.invoke('game:open_mods_folder', { profileSlug }),
+    uninstallProfile: (profileSlug: string): Promise<{ success: boolean; message?: string; path?: string }> =>
+      ipcRenderer.invoke('game:uninstall_profile', { profileSlug }),
 
     launchComputeDownload: (callback: () => void) => ipcRenderer.on('game:launch_compute_download', (_event) => callback()),
 

@@ -1,16 +1,38 @@
-import { ipcMain, BrowserWindow, app } from 'electron'
+import { ipcMain, BrowserWindow, shell } from 'electron'
 import { Launcher } from 'eml-lib'
-import * as emlLib from 'eml-lib'
-import type { Account, IProfile } from 'eml-lib'
+import type { Account } from 'eml-lib'
 import type { IGameSettings } from './settings'
 import logger from 'electron-log/main'
 import { ADMINTOOL_URL, ROOT_ID } from '../const'
 import { safeSend } from '../utils/ipc'
+import fs from 'node:fs'
+import path from 'node:path'
 
 
+function sanitizeSlug(slug: string): string {
+  return slug
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9\-]/g, '')
+}
+
+function getAppDataFolder(): string {
+  if (process.platform === 'win32') return process.env.APPDATA ?? ''
+  if (process.platform === 'darwin') return path.join(process.env.HOME ?? '', 'Library', 'Application Support')
+  return process.env.HOME ?? ''
+}
+
+function getServerFolder(rootId: string): string {
+  const normalizedRoot = rootId.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+  const folderName = process.platform === 'darwin' ? normalizedRoot : `.${normalizedRoot}`
+  return path.join(getAppDataFolder(), folderName)
+}
+
+function getProfileRoot(profileSlug: string): string {
+  return path.join(getServerFolder(ROOT_ID), sanitizeSlug(profileSlug))
+}
 
 export function registerLauncherHandlers(mainWindow: BrowserWindow) {
-  // AJOUT CRITIQUE : Le mot-clé "async" avant "_event"
   ipcMain.handle('game:launch', async (_event, payload: { account: Account; settings: IGameSettings; profileSlug: string }) => {
     const { account, settings, profileSlug } = payload
     const java = settings.java === 'system' ? { install: 'manual' as const, absolutePath: 'java' } : { install: 'auto' as const }
@@ -128,13 +150,6 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
     launcher.on('launch_launch', (info) => {
       logger.log(`Launching Minecraft ${info.version} (${info.type}${info.loaderVersion ? ` ${info.loaderVersion}` : ''})...`)
       safeSend(mainWindow, 'game:launch_launch', info)
-      if (settings.launcherAction === 'close') {
-        setTimeout(() => app.quit(), 5000)
-      } else if (settings.launcherAction === 'hide') {
-        setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize()
-        }, 5000)
-      }
       safeSend(mainWindow, 'game:launched')
     })
     launcher.on('launch_data', (message) => {
@@ -158,12 +173,6 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
         }
       }
 
-      // Cleanup listeners after launch finishes
-      try {
-        launcher.removeAllListeners()
-      } catch (err) {
-        logger.error('Error removing launcher listeners:', err)
-      }
     })
 
     launcher.on('launch_debug', (message) => {
@@ -180,11 +189,49 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
       safeSend(mainWindow, 'game:launch_error', err instanceof Error ? err.message : 'Erreur inconnue')
     }
   })
+
+  ipcMain.handle('game:open_mods_folder', async (_event, payload: { profileSlug: string }) => {
+    try {
+      const profileRoot = getProfileRoot(payload.profileSlug)
+      const modsPath = path.join(profileRoot, 'mods')
+
+      fs.mkdirSync(modsPath, { recursive: true })
+      const openError = await shell.openPath(modsPath)
+      if (openError) {
+        logger.error('Unable to open mods folder:', openError)
+        return { success: false, message: openError, path: modsPath }
+      }
+
+      return { success: true, path: modsPath }
+    } catch (err) {
+      logger.error('Error while opening mods folder:', err)
+      return { success: false, message: err instanceof Error ? err.message : 'Erreur inconnue' }
+    }
+  })
+
+  ipcMain.handle('game:uninstall_profile', async (_event, payload: { profileSlug: string }) => {
+    try {
+      const profileRoot = getProfileRoot(payload.profileSlug)
+
+      if (!fs.existsSync(profileRoot)) {
+        return { success: true, message: 'Version déjà absente', path: profileRoot }
+      }
+
+      fs.rmSync(profileRoot, { recursive: true, force: true })
+      return { success: true, path: profileRoot }
+    } catch (err) {
+      logger.error('Error while uninstalling profile:', err)
+      return { success: false, message: err instanceof Error ? err.message : 'Erreur inconnue' }
+    }
+  })
+
   // Cleanup listeners when the window is closed
   mainWindow.on('closed', () => {
     try {
       // remove the ipc handler for game:launch to avoid stale references
       ipcMain.removeHandler('game:launch')
+      ipcMain.removeHandler('game:open_mods_folder')
+      ipcMain.removeHandler('game:uninstall_profile')
       // remove any listeners attached to launcher instances
       // Note: launcher is scoped per-launch; this ensures any persisted references are cleaned by GC
       // If additional global child processes are used, ensure they are also cleaned here.

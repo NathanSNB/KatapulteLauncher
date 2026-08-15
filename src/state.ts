@@ -2,7 +2,7 @@ import type { Account, IAvatar, ICape, ISkin } from 'eml-lib'
 import logger from 'electron-log/renderer'
 import shared from './shared'
 
-export type ViewName = 'home' | 'login' | 'settings' | 'loading' | 'maintenance' | 'update'
+export type ViewName = 'home' | 'login' | 'settings' | 'loading' | 'maintenance' | 'update' | 'logs'
 export type BlockingViewName = 'maintenance' | 'update'
 
 export function getUser() {

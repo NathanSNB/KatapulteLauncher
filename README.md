@@ -215,32 +215,14 @@ Les livrables sont généralement générés dans le dossier `release/` selon la
 
 ## Roadmap
 
-### V1 — Base du launcher
-
-- [x] Authentification Microsoft
-- [x] Gestion de session et refresh
-- [x] Sélection des profils
-- [x] Démarrage du jeu avec Java / mémoire / résolution
-- [x] Gestion des skin, cape et avatar
-- [x] Système de news / maintenance
-- [x] Gestion des mises à jour / bootstraps
-- [x] Interface login, home, settings et maintenance
 
 ### V2 — Polissage et stabilité
 
-- [ ] Nettoyage du code et refacto des composants UI
-- [ ] Optimisation des performances d’ouverture de l’application
-- [ ] Gestion des erreurs détaillée et logs utilisateur
-- [ ] Meilleure validation des états de connexion et de session
-- [ ] Gestion des téléchargements / mises à jour plus robuste
-
-### V3 — Expérience et distribution
-
-- [ ] Packagings multi-plateformes automatisés et reproductibles
-- [ ] Release notes plus lisibles et automatiques
-- [ ] Déploiement/gestion versionning plus propre
-- [ ] Ajout de modules de contenu / gestion administrateur
-- [ ] Expérience de mise à jour plus transparente pour les joueurs
+- [x] Suppression des fichiers de jeu
+- [ ] Ajout de skin perso
+- [x] Ajout de vérification Server-Side du nb de launcher installé 
+- [x] Accéder au .natsnb68 de la version 
+- [x] Quand le jeu se lance que le launcher se mette en mod logs 
 
 ## GitHub Actions - packaging multi-plateforme
 

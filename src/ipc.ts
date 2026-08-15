@@ -67,6 +67,8 @@ declare global {
       }
       game: {
         launch: (payload: { account: Account; settings: IGameSettings, profileSlug: string }) => Promise<void>
+        openModsFolder: (profileSlug: string) => Promise<{ success: boolean; message?: string; path?: string }>
+        uninstallProfile: (profileSlug: string) => Promise<{ success: boolean; message?: string; path?: string }>
 
         launchComputeDownload: (callback: () => void) => void
 
@@ -166,6 +168,8 @@ export const bootstraps = {
 
 export const game = {
   launch: async (payload: { account: Account; settings: IGameSettings, profileSlug: string }) => await window.api.game.launch(payload),
+  openModsFolder: async (profileSlug: string) => await window.api.game.openModsFolder(profileSlug),
+  uninstallProfile: async (profileSlug: string) => await window.api.game.uninstallProfile(profileSlug),
   launchComputeDownload: (callback: () => void) => window.api.game.launchComputeDownload(callback),
   launchDownload: (callback: (value: LauncherEvents['launch_download'][0]) => void) => window.api.game.launchDownload(callback),
   downloadProgress: (callback: (value: DownloaderEvents['download_progress'][0]) => void) => window.api.game.downloadProgress(callback),

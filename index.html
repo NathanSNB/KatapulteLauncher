@@ -166,7 +166,8 @@
                   
                   <div class="action-area">
                     <div class="play-buttons" id="play-buttons-container">
-                      </div>
+                    </div>
+                    <div class="launch-secondary-actions" id="launch-secondary-actions"></div>
                     <div class="progress-container hidden" id="launch-progress-container">
                       <div class="progress-info">
                         <span id="launch-progress-label">Préparation...</span>
@@ -190,6 +191,24 @@
                 </div>
               </main>
        </div>
+
+      <div id="view-logs" class="view" data-view="logs">
+        <main class="logs-view">
+          <div class="logs-view-head">
+            <h2>Logs d'exécution</h2>
+            <div class="logs-actions">
+              <button id="btn-copy-logs" class="btn btn-secondary">
+                <i class="fa-solid fa-copy"></i> Copier les logs
+              </button>
+              <button id="btn-back-home-from-logs" class="btn btn-secondary">
+                <i class="fa-solid fa-house"></i> Retour launcher
+              </button>
+            </div>
+          </div>
+          <p class="logs-caption">Le jeu est lancé. Vous pouvez suivre les sorties console en temps réel.</p>
+          <pre id="logs-view-content"></pre>
+        </main>
+      </div>
 
       <div id="view-settings" class="view overlay" data-view="settings">
         <div class="settings-modal">

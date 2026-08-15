@@ -63,6 +63,7 @@ export function initHome() {
   const heroTitle = document.getElementById('hero-title')!
   const heroDesc = document.getElementById('hero-desc')!
   const playButtonsContainer = document.getElementById('play-buttons-container')!
+  const launchSecondaryActions = document.getElementById('launch-secondary-actions')!
   const newsList = document.getElementById('news-list')!
   const bgElement = document.getElementById('server-background')!
   const statusDot = document.getElementById('server-status-dot')!
@@ -71,10 +72,15 @@ export function initHome() {
   const progressBar = document.getElementById('launch-progress-bar')!
   const progressLabel = document.getElementById('launch-progress-label')!
   const progressPercent = document.getElementById('launch-progress-percent')!
+  const logsViewContent = document.getElementById('logs-view-content')!
+  const copyLogsButton = document.getElementById('btn-copy-logs')
+  const backHomeFromLogsButton = document.getElementById('btn-back-home-from-logs')
 
   let groupedProfiles: Record<string, any[]> = {}
+  let activeUtilityProfile: any | null = null
   let totalToDownload = 0
   let totalDownloadedByType: { type: string; size: number }[] = []
+  let logsLines: string[] = []
 
   document.getElementById('btn-discord')?.addEventListener('click', () => {
     window.open('https://discord.gg/QsCh9pdsTE', '_blank')
@@ -93,6 +99,83 @@ export function initHome() {
     }
   })
 
+  const appendLogLine = (message: string) => {
+    const prefix = new Date().toLocaleTimeString('fr-FR', { hour12: false })
+    const line = `[${prefix}] ${message}`
+
+    logsLines.push(line)
+    if (logsLines.length > 500) logsLines.splice(0, logsLines.length - 500)
+
+    logsViewContent.textContent = logsLines.join('\n')
+    logsViewContent.scrollTop = logsViewContent.scrollHeight
+  }
+
+  const setLogsMode = () => {
+    setView('logs')
+    appendLogLine('Mode logs activé: le launcher reste ouvert pendant l\'exécution.')
+  }
+
+  copyLogsButton?.addEventListener('click', async () => {
+    const text = logsLines.join('\n')
+    if (!text.trim()) {
+      await Dialog.show('Aucun log à copier pour le moment.', [{ text: 'OK', type: 'ok' }])
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(text)
+      await Dialog.show('Logs copiés dans le presse-papiers.', [{ text: 'OK', type: 'ok' }])
+    } catch {
+      await Dialog.show('Impossible de copier automatiquement les logs.', [{ text: 'OK', type: 'ok' }])
+    }
+  })
+
+  backHomeFromLogsButton?.addEventListener('click', () => setView('home'))
+
+  const renderUtilityActions = () => {
+    launchSecondaryActions.innerHTML = ''
+    if (!activeUtilityProfile) return
+
+    const uninstallBtn = document.createElement('button')
+    uninstallBtn.className = 'btn-launch-tool uninstall'
+    uninstallBtn.innerHTML = `<i class="fa-solid fa-trash"></i> Désinstaller la version`
+    uninstallBtn.title = `Supprimer les fichiers de ${activeUtilityProfile.slug}`
+
+    uninstallBtn.addEventListener('click', async () => {
+      const isConfirmed = await Dialog.show(
+        `Supprimer la version locale ${activeUtilityProfile.slug} ?\nLe prochain lancement retéléchargera les fichiers.`,
+        [
+          { text: 'Annuler', type: 'cancel' },
+          { text: 'Désinstaller', type: 'danger' }
+        ]
+      )
+      if (!isConfirmed) return
+
+      const result = await game.uninstallProfile(activeUtilityProfile.slug)
+      if (!result.success) {
+        await Dialog.show(`Échec de la désinstallation: ${result.message ?? 'Erreur inconnue'}`, [{ text: 'Fermer', type: 'ok' }])
+        return
+      }
+
+      await Dialog.show('Version désinstallée avec succès.', [{ text: 'OK', type: 'ok' }])
+    })
+
+    const openModsBtn = document.createElement('button')
+    openModsBtn.className = 'btn-launch-tool icon-only'
+    openModsBtn.innerHTML = '<i class="fa-solid fa-folder-open"></i>'
+    openModsBtn.title = 'Ouvrir le dossier mods'
+    openModsBtn.setAttribute('aria-label', 'Ouvrir le dossier mods')
+
+    openModsBtn.addEventListener('click', async () => {
+      const result = await game.openModsFolder(activeUtilityProfile.slug)
+      if (result.success) return
+      await Dialog.show(`Impossible d'ouvrir le dossier mods: ${result.message ?? 'Erreur inconnue'}`, [{ text: 'Fermer', type: 'ok' }])
+    })
+
+    launchSecondaryActions.appendChild(uninstallBtn)
+    launchSecondaryActions.appendChild(openModsBtn)
+  }
+
   const switchServerGroup = (prefix: string) => {
     const group = groupedProfiles[prefix]
     if (!group || group.length === 0) return
@@ -109,6 +192,10 @@ export function initHome() {
     bgElement.style.backgroundImage = `url('${info.bg}')`
 
     playButtonsContainer.innerHTML = ''
+    logsLines = []
+    logsViewContent.textContent = ''
+    activeUtilityProfile = group.find((profile) => !profile.slug.toLowerCase().includes('-fc')) ?? group[0]
+    renderUtilityActions()
     
     // Génération des boutons (Petite config / Normal)
     group.forEach(profile => {
@@ -119,11 +206,11 @@ export function initHome() {
       btn.style.margin = '0 5px'
       
       if (isLite) {
-        btn.innerHTML = `<i class="fa-solid fa-feather"></i> Petite Config`
+        btn.innerHTML = `<i class="fa-solid fa-feather"></i> Jouer en petite config`
         btn.style.background = 'rgba(255, 255, 255, 0.1)'
         btn.style.border = '1px solid rgba(255, 255, 255, 0.2)'
       } else {
-        btn.innerHTML = `<i class="fa-solid fa-play"></i> Jouer Normal`
+        btn.innerHTML = `<i class="fa-solid fa-play"></i> Jouer`
       }
       
       btn.onclick = () => launchGame(profile)
@@ -204,7 +291,10 @@ export function initHome() {
   const launchGame = async (profile: any) => {
     const user = getUser()
     if (!user) return
+    logsLines = []
+    logsViewContent.textContent = ''
     playButtonsContainer.style.display = 'none'
+    launchSecondaryActions.style.display = 'none'
     progressContainer.classList.remove('hidden')
     
     const config = await settings.get()
@@ -243,13 +333,22 @@ export function initHome() {
   game.launchExtractNatives(() => progressLabel.innerText = 'Extraction...')
   game.launchCopyAssets(() => progressLabel.innerText = 'Finalisation des ressources...')
   game.launchPatchLoader(() => progressLabel.innerText = 'Application des patchs...')
-  game.launchLaunch(() => progressLabel.innerText = 'Lancement du jeu...')
+  game.launchLaunch(() => {
+    progressLabel.innerText = 'Lancement du jeu...'
+    setLogsMode()
+  })
+
+  game.launchData((message) => appendLogLine(message))
+  game.launchDebug((message) => appendLogLine(message))
+  game.patchDebug((message) => appendLogLine(message))
+  game.downloadError((error) => appendLogLine(`Erreur de téléchargement ${error.filename}: ${error.message}`))
+  game.patchError((error) => appendLogLine(`Erreur de patch ${error.filename}: ${error.message}`))
+  game.launchClose((code) => appendLogLine(`Processus Minecraft fermé avec le code ${code}.`))
   
   game.launched(() => {
-    setTimeout(() => {
-      playButtonsContainer.style.display = 'flex'
-      progressContainer.classList.add('hidden')
-    }, 10000)
+    playButtonsContainer.style.display = 'flex'
+    launchSecondaryActions.style.display = 'flex'
+    progressContainer.classList.add('hidden')
   })
 
   const loadInitialData = async () => {
