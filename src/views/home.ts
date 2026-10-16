@@ -11,13 +11,13 @@ import DOMPurify from 'dompurify'
 const SERVER_INFO: Record<string, { title: string, desc: string, bg: string }> = {
   'vanilla': {
     title: 'Vanilla',
-    desc: 'L\'expérience vanilla authentique. Bâtissez et survivez.',
+    desc: 'L\'expérience vanilla de la mathysie !',
     bg: './images/bg-vanilla.png' // Place ton image ici
   },
-  'modd': {
-    title: 'Moddé',
-    desc: 'Plongez dans une aventure unique, rythmée par des quêtes tutoriels et un monde orienté autour de l\'ingénierie et du mod Create.',
-    bg: './images/bg-modd.png' // Place ton image ici
+  'mathysia': {
+    title: 'Mathysia',
+    desc: 'Plongez dans l\'univers unique de MathysiaSMP.',
+    bg: './images/bg-mathysia.png' // Place ton image ici
   },
   'events': {
     title: 'Événements',
@@ -54,6 +54,7 @@ const getIconForProfile = (prefix: string) => {
   const lowerPrefix = prefix.toLowerCase()
   if (lowerPrefix.includes('vanilla')) return 'fa-tree'
   if (lowerPrefix.includes('modde') || lowerPrefix.includes('modpack')) return 'fa-flask'
+  if (lowerPrefix.includes('mathysia')) return 'fa-globe'
   if (lowerPrefix.includes('mini') || lowerPrefix.includes('jeux')) return 'fa-gamepad'
   if (lowerPrefix.includes('event')) return 'fa-calendar'
   return 'fa-server'
