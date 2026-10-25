@@ -1,7 +1,8 @@
 import { ipcMain, BrowserWindow, shell } from 'electron'
 import { Launcher } from 'eml-lib'
 import emlUtils from 'eml-lib/lib/utils/utils.js'
-import type { Account } from 'eml-lib'
+import loaders from 'eml-lib/lib/utils/loaders.js'
+import type { Account, ILoader } from 'eml-lib'
 import { normalizeGameSettings, type IGameSettings } from './settings'
 import logger from 'electron-log/main'
 import { ADMINTOOL_URL, ROOT_ID } from '../const'
@@ -27,10 +28,6 @@ interface IServerModsState {
   files: string[]
 }
 
-interface LauncherRuntime {
-  run(javaPath: string, args: string[]): Promise<void>
-}
-
 interface FileHashCacheEntry {
   size: number
   mtimeMs: number
@@ -43,6 +40,7 @@ let hashInFlight = new Map<string, Promise<string>>()
 let hashCacheWriteTimer: NodeJS.Timeout | null = null
 let hashCacheWriteQueue: Promise<void> = Promise.resolve()
 let hashFunctionPatched = false
+let forgeLoaderResolutionPatched = false
 
 async function prepareFileHashCache(profileSlug: string): Promise<void> {
   const nextCachePath = path.join(getProfileRoot(profileSlug), '.katapulte-file-hashes.json')
@@ -104,11 +102,51 @@ async function prepareFileHashCache(profileSlug: string): Promise<void> {
   hashFunctionPatched = true
 }
 
-function normalizeJvmMemoryArgs(args: string[], memoryMb: number): string[] {
-  const filteredArgs = args.filter((arg) => !/^-Xm[ sx]\d+M$/i.test(arg))
-  return [...filteredArgs, `-Xmx${memoryMb}M`, `-Xms${memoryMb}M`]
-}
+function patchForgeLoaderResolution(): void {
+  if (forgeLoaderResolutionPatched) return
 
+  const originalGetLoader = loaders.getLoader.bind(loaders)
+  loaders.getLoader = async (config): Promise<ILoader> => {
+    const loaderConfig = config.minecraft.loader
+    if (loaderConfig?.loader !== 'forge' || !loaderConfig.version) {
+      return originalGetLoader(config)
+    }
+
+    const loaderVersion = loaderConfig.version
+    const minecraftVersion = config.minecraft.version
+    if (!minecraftVersion) return originalGetLoader(config)
+
+    const artifactVersion = `${minecraftVersion}-${loaderVersion}`
+    const loaderId = `forge-${artifactVersion}`
+    const loaderDirectory = path.join(config.root, 'versions', loaderId)
+    const loaderName = `${loaderId}.jar`
+    const loaderPath = path.join(loaderDirectory, loaderName)
+    const loaderUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${artifactVersion}/forge-${artifactVersion}-installer.jar`
+    let size: number | undefined
+
+    try {
+      size = (await fsp.stat(loaderPath)).size
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+
+    return {
+      type: 'FORGE',
+      minecraftVersion,
+      loaderVersion,
+      format: 'INSTALLER',
+      file: {
+        name: loaderName,
+        path: `versions/${loaderId}/`,
+        url: loaderUrl,
+        size,
+        type: 'OTHER'
+      },
+      updatedAt: new Date()
+    }
+  }
+  forgeLoaderResolutionPatched = true
+}
 
 function sanitizeSlug(slug: string): string {
   return slug
@@ -139,6 +177,40 @@ function getModsPath(profileSlug: string): string {
 
 function getServerModsStatePath(profileSlug: string): string {
   return path.join(getProfileRoot(profileSlug), '.katapulte-server-mods.json')
+}
+
+async function removeCorruptVersionManifest(
+  profileSlug: string,
+  versionDirectoryName: string,
+  manifestName: string,
+  expectedId: string
+): Promise<void> {
+  const versionDirectory = path.join(getProfileRoot(profileSlug), 'versions', versionDirectoryName)
+  const manifestPath = path.join(versionDirectory, `${manifestName}.json`)
+  let contents: string
+  try {
+    contents = await fsp.readFile(manifestPath, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+
+  try {
+    const manifest: unknown = JSON.parse(contents)
+    if (
+      typeof manifest === 'object' &&
+      manifest !== null &&
+      'id' in manifest &&
+      manifest.id === expectedId
+    ) {
+      return
+    }
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error
+  }
+
+  await fsp.rm(versionDirectory, { recursive: true, force: true })
+  logger.warn(`Removed corrupt Minecraft version directory: ${versionDirectory}`)
 }
 
 function normalizeModName(value: string): string {
@@ -203,18 +275,33 @@ async function synchronizeServerMods(profileSlug: string, serverFiles?: Set<stri
 export function registerLauncherHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('game:launch', async (_event, payload: { account: Account; settings: IGameSettings; profileSlug: string }) => {
     const { account, settings, profileSlug } = payload
+    const minecraftVersion = '1.20.1'
+    const forgeVersion = '47.4.28'
     await prepareFileHashCache(profileSlug)
+    await removeCorruptVersionManifest(profileSlug, minecraftVersion, minecraftVersion, minecraftVersion)
+    const forgeManifestId = `forge-${minecraftVersion}-${forgeVersion}`
+    await removeCorruptVersionManifest(profileSlug, forgeManifestId, forgeManifestId, forgeManifestId)
     const normalizedSettings = normalizeGameSettings(settings)
     const isLiteProfile = profileSlug.toLowerCase().includes('-fc')
     const effectiveRamGb = isLiteProfile ? Math.min(normalizedSettings.memory.ram, 4) : normalizedSettings.memory.ram
     const effectiveRamMb = effectiveRamGb * 1024
     const java = settings.java === 'system' ? { install: 'manual' as const, absolutePath: 'java' } : { install: 'auto' as const }
     logger.log('Launching')
+    patchForgeLoaderResolution()
 
     const launcher = new Launcher({
       url: ADMINTOOL_URL, // CORRECTION : Utilisation de la constante
       root: ROOT_ID,      // CORRECTION : Utilisation de la constante
-      profile: { slug: profileSlug },
+      profile: {
+        slug: profileSlug,
+        minecraft: {
+          version: minecraftVersion,
+          loader: {
+            loader: 'forge',
+            version: forgeVersion
+          }
+        }
+      },
       account: account,
       cleaning: {
         enabled: false
@@ -231,12 +318,6 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
         fullscreen: normalizedSettings.resolution.fullscreen
       }
     })
-
-    const runtimeLauncher = launcher as unknown as LauncherRuntime
-    const originalRun = runtimeLauncher.run
-    runtimeLauncher.run = function runWithNormalizedMemory(javaPath, args) {
-      return originalRun.call(this, javaPath, normalizeJvmMemoryArgs(args, effectiveRamMb))
-    }
 
     launcher.on('launch_compute_download', () => {
       logger.log('Computing download...')
@@ -356,8 +437,7 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
     })
 
     launcher.on('launch_debug', (message) => {
-      const normalizedMessage = message.replace(/-Xmx\d+M|-Xms\d+M/gi, '').replace(/\s{2,}/g, ' ').trim()
-      safeSend(mainWindow, 'game:launch_debug', `${normalizedMessage} -Xmx${effectiveRamMb}M -Xms${effectiveRamMb}M`)
+      safeSend(mainWindow, 'game:launch_debug', message)
     })
     launcher.on('patch_debug', (message) => {
       safeSend(mainWindow, 'game:patch_debug', message)
