@@ -42,9 +42,7 @@ export async function bootstrap() {
     }
   }
 
-  const up = await bootstraps.check()
-  const bg = await background.get()
-  const mn = await maintenance.get()
+  const [up, bg, mn] = await Promise.all([bootstraps.check(), background.get(), maintenance.get()])
   const bgUrl = bg?.file?.url ?? DEFAULT_BACKGROUND
 
   if (up.updateAvailable) {
@@ -94,7 +92,8 @@ export async function bootstrap() {
     if (bgElement) bgElement.style.backgroundImage = `url('${bgUrl}')`
 
     if (session.success) {
-      const [__, skins, capes, avatar] = await Promise.all([skin.reload(session.account), skin.getSkin(), skin.getCape(), skin.getAvatar()])
+      await skin.reload(session.account)
+      const [skins, capes, avatar] = await Promise.all([skin.getSkin(), skin.getCape(), skin.getAvatar()])
 
       setUser(session.account, { skins, capes, avatar })
       setView('home')
@@ -112,4 +111,3 @@ export async function bootstrap() {
     document.body.classList.add('loaded')
   }
 }
-

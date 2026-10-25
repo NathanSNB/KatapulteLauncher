@@ -1,9 +1,8 @@
 import { setView, getUser } from '../state'
 import { game, news, server, settings, profiles, auth, maintenance } from '../ipc'
 import { Dialog } from './dialog'
+import shared from '../shared'
 import logger from 'electron-log/renderer'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 
 // ---------------------------------------------------------
 // CONFIGURATION LOCALE DES SERVEURS (Titres, Descriptions, Backgrounds)
@@ -32,18 +31,12 @@ const SERVER_INFO: Record<string, { title: string, desc: string, bg: string }> =
 }
 // ---------------------------------------------------------
 
-// Sécurisation des liens
-marked.use({
-  renderer: {
-    link(link) {
-      const href = link.href ?? '#'
-      const titleAttr = link.title ? ` title="${link.title}"` : ''
-      return `<a href="${href}" target="_blank" rel="noopener noreferrer"${titleAttr}>${link.text}</a>`
-    }
-  }
-})
+let markdownDependenciesPromise: Promise<[typeof import('marked'), typeof import('dompurify')]> | null = null
 
-const parseNews = (rawContent: string) => DOMPurify.sanitize(marked.parse(rawContent) as string, { ADD_ATTR: ['target', 'rel'] })
+function loadMarkdownDependencies() {
+  markdownDependenciesPromise ??= Promise.all([import('marked'), import('dompurify')])
+  return markdownDependenciesPromise
+}
 
 const formatDate = (dateString: string) => {
   const date = new Date(dateString)
@@ -137,28 +130,12 @@ export function initHome() {
     launchSecondaryActions.innerHTML = ''
     if (!activeUtilityProfile) return
 
-    const uninstallBtn = document.createElement('button')
-    uninstallBtn.className = 'btn-launch-tool uninstall'
-    uninstallBtn.innerHTML = `<i class="fa-solid fa-trash"></i> Désinstaller la version`
-    uninstallBtn.title = `Supprimer les fichiers de ${activeUtilityProfile.slug}`
-
-    uninstallBtn.addEventListener('click', async () => {
-      const isConfirmed = await Dialog.show(
-        `Supprimer la version locale ${activeUtilityProfile.slug} ?\nLe prochain lancement retéléchargera les fichiers.`,
-        [
-          { text: 'Annuler', type: 'cancel' },
-          { text: 'Désinstaller', type: 'danger' }
-        ]
-      )
-      if (!isConfirmed) return
-
-      const result = await game.uninstallProfile(activeUtilityProfile.slug)
-      if (!result.success) {
-        await Dialog.show(`Échec de la désinstallation: ${result.message ?? 'Erreur inconnue'}`, [{ text: 'Fermer', type: 'ok' }])
-        return
-      }
-
-      await Dialog.show('Version désinstallée avec succès.', [{ text: 'OK', type: 'ok' }])
+    const manageModsBtn = document.createElement('button')
+    manageModsBtn.className = 'btn-launch-tool'
+    manageModsBtn.innerHTML = `<i class="fa-solid fa-puzzle-piece"></i> Gérer les mods`
+    manageModsBtn.addEventListener('click', () => {
+      setView('settings')
+      document.querySelector<HTMLButtonElement>('[data-tab="mods"]')?.click()
     })
 
     const openModsBtn = document.createElement('button')
@@ -173,7 +150,7 @@ export function initHome() {
       await Dialog.show(`Impossible d'ouvrir le dossier mods: ${result.message ?? 'Erreur inconnue'}`, [{ text: 'Fermer', type: 'ok' }])
     })
 
-    launchSecondaryActions.appendChild(uninstallBtn)
+    launchSecondaryActions.appendChild(manageModsBtn)
     launchSecondaryActions.appendChild(openModsBtn)
   }
 
@@ -196,6 +173,7 @@ export function initHome() {
     logsLines = []
     logsViewContent.textContent = ''
     activeUtilityProfile = group.find((profile) => !profile.slug.toLowerCase().includes('-fc')) ?? group[0]
+    shared.activeProfileSlug = activeUtilityProfile.slug
     renderUtilityActions()
     
     // Génération des boutons (Petite config / Normal)
@@ -245,22 +223,40 @@ export function initHome() {
     }
   }
 
-  const showNewsPopup = (item: any) => {
+  const showNewsPopup = async (item: any) => {
+    const [{ marked }, { default: DOMPurify }] = await loadMarkdownDependencies()
+    marked.use({
+      renderer: {
+        link(link) {
+          const href = link.href ?? '#'
+          const titleAttr = link.title ? ` title="${link.title}"` : ''
+          return `<a href="${href}" target="_blank" rel="noopener noreferrer"${titleAttr}>${link.text}</a>`
+        }
+      }
+    })
     const overlay = document.createElement('div')
     overlay.className = 'dialog-overlay'
     overlay.style.alignItems = 'flex-start'
     overlay.style.justifyContent = 'flex-end'
 
-    const bodyHtml = item.content ? parseNews(item.content) : 'Aucun contenu.'
+    const bodyHtml = item.content
+      ? DOMPurify.sanitize(marked.parse(item.content) as string, { ADD_ATTR: ['target', 'rel'] })
+      : 'Aucun contenu.'
 
     overlay.innerHTML = `
-      <div class="dialog-box" style="width: 400px; background: #1a1a1a; margin: 40px;">
-        <h2 style="color: white; font-size: 18px;">${item.title}</h2>
-        <div style="color: #ddd; font-size: 14px;">${bodyHtml}</div>
+      <div class="dialog-box news-dialog">
+        <button class="dialog-close" id="close-news-icon" type="button" aria-label="Fermer"><i class="fa-solid fa-xmark"></i></button>
+        <h2>${item.title}</h2>
+        <div class="news-dialog-content">${bodyHtml}</div>
         <button id="close-news" class="btn btn-secondary">Fermer</button>
       </div>`
     document.body.appendChild(overlay)
-    document.getElementById('close-news')?.addEventListener('click', () => overlay.remove())
+    const closeNews = () => overlay.remove()
+    document.getElementById('close-news')?.addEventListener('click', closeNews)
+    document.getElementById('close-news-icon')?.addEventListener('click', closeNews)
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeNews()
+    })
   }
 
   const loadNews = async () => {
@@ -283,7 +279,9 @@ export function initHome() {
           <strong style="color: white;">${item.title}</strong>
           ${tagsHtml}
         `
-        div.onclick = () => showNewsPopup(item)
+        div.onclick = () => {
+          void showNewsPopup(item)
+        }
         newsList.appendChild(div)
       })
     } catch (e) { newsList.innerHTML = 'Erreur chargement' }
@@ -300,7 +298,7 @@ export function initHome() {
     
     const config = await settings.get()
     if (profile.slug.toLowerCase().includes('-fc')) {
-       config.memory.max = Math.min(config.memory.max, 4) 
+       config.memory.ram = Math.min(config.memory.ram, 4)
     }
 
     game.launch({ account: user, settings: config, profileSlug: profile.slug })

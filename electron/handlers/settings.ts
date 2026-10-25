@@ -18,8 +18,7 @@ export interface ISystemInfo {
 export interface IGameSettings {
   java: string
   memory: {
-    min: number
-    max: number
+    ram: number
   }
   resolution: {
     width: number
@@ -32,8 +31,7 @@ export interface IGameSettings {
 export const DEFAULT_SETTINGS: IGameSettings = {
   java: 'bundled',
   memory: {
-    min: 1,
-    max: 4
+    ram: 4
   },
   resolution: {
     width: 1280,
@@ -41,6 +39,23 @@ export const DEFAULT_SETTINGS: IGameSettings = {
     fullscreen: false
   },
   launcherAction: 'close'
+}
+
+function normalizeRamGb(value: unknown): number {
+  const ram = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(ram) || ram <= 0) return DEFAULT_SETTINGS.memory.ram
+  return Math.max(1, Math.round(ram))
+}
+
+export function normalizeGameSettings(settings: Partial<IGameSettings> & { memory?: { min?: number; max?: number; ram?: number } }): IGameSettings {
+  const legacyRam = settings.memory?.ram ?? settings.memory?.max ?? settings.memory?.min
+  return {
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    memory: {
+      ram: normalizeRamGb(legacyRam)
+    }
+  }
 }
 
 export function registerSettingsHandlers() {
@@ -51,7 +66,8 @@ export function registerSettingsHandlers() {
         return DEFAULT_SETTINGS
       }
       const data = fs.readFileSync(settingsPath, 'utf-8')
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(data) }
+      const saved = JSON.parse(data) as Partial<IGameSettings> & { memory?: { min?: number; max?: number; ram?: number } }
+      return normalizeGameSettings(saved)
     } catch (err) {
       logger.error('Error reading settings:', err)
       return DEFAULT_SETTINGS
@@ -60,7 +76,7 @@ export function registerSettingsHandlers() {
 
   ipcMain.handle('settings:set', async (_event, newSettings: IGameSettings) => {
     try {
-      fs.writeFileSync(settingsPath, JSON.stringify(newSettings, null, 2))
+      fs.writeFileSync(settingsPath, JSON.stringify(normalizeGameSettings(newSettings), null, 2))
       return true
     } catch (err) {
       logger.error('Error writing settings:', err)
@@ -90,4 +106,3 @@ export function registerSettingsHandlers() {
     return result.filePaths[0] ?? null
   })
 }
-

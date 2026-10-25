@@ -1,12 +1,113 @@
 import { ipcMain, BrowserWindow, shell } from 'electron'
 import { Launcher } from 'eml-lib'
+import emlUtils from 'eml-lib/lib/utils/utils.js'
 import type { Account } from 'eml-lib'
-import type { IGameSettings } from './settings'
+import { normalizeGameSettings, type IGameSettings } from './settings'
 import logger from 'electron-log/main'
 import { ADMINTOOL_URL, ROOT_ID } from '../const'
 import { safeSend } from '../utils/ipc'
 import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import path from 'node:path'
+
+export interface IModEntry {
+  name: string
+  enabled: boolean
+  size: number
+  managed: boolean
+}
+
+interface IServerManifestFile {
+  path?: string
+  name?: string
+  type?: string
+}
+
+interface IServerModsState {
+  files: string[]
+}
+
+interface LauncherRuntime {
+  run(javaPath: string, args: string[]): Promise<void>
+}
+
+interface FileHashCacheEntry {
+  size: number
+  mtimeMs: number
+  hash: string
+}
+
+let hashCachePath: string | null = null
+let hashCache = new Map<string, FileHashCacheEntry>()
+let hashInFlight = new Map<string, Promise<string>>()
+let hashCacheWriteTimer: NodeJS.Timeout | null = null
+let hashCacheWriteQueue: Promise<void> = Promise.resolve()
+let hashFunctionPatched = false
+
+async function prepareFileHashCache(profileSlug: string): Promise<void> {
+  const nextCachePath = path.join(getProfileRoot(profileSlug), '.katapulte-file-hashes.json')
+  if (hashCachePath === nextCachePath) return
+
+  hashCachePath = nextCachePath
+  hashCache = new Map()
+  hashInFlight = new Map()
+  try {
+    const contents = await fsp.readFile(nextCachePath, 'utf8')
+    const entries = JSON.parse(contents) as Record<string, FileHashCacheEntry>
+    for (const [filePath, entry] of Object.entries(entries)) {
+      if (
+        typeof entry?.size === 'number' &&
+        typeof entry?.mtimeMs === 'number' &&
+        typeof entry?.hash === 'string'
+      ) {
+        hashCache.set(filePath, entry)
+      }
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('Unable to read file hash cache:', error)
+    }
+  }
+
+  if (hashFunctionPatched) return
+  const originalGetFileHash = emlUtils.getFileHash.bind(emlUtils)
+  emlUtils.getFileHash = async (filePath: string): Promise<string> => {
+    const stats = await fsp.stat(filePath)
+    const cached = hashCache.get(filePath)
+    if (cached && cached.size === stats.size && cached.mtimeMs === stats.mtimeMs) {
+      return cached.hash
+    }
+
+    const existingHash = hashInFlight.get(filePath)
+    if (existingHash) return existingHash
+
+    const hashPromise = originalGetFileHash(filePath)
+    hashInFlight.set(filePath, hashPromise)
+    let hash: string
+    try {
+      hash = await hashPromise
+    } finally {
+      hashInFlight.delete(filePath)
+    }
+    hashCache.set(filePath, { size: stats.size, mtimeMs: stats.mtimeMs, hash })
+    if (hashCacheWriteTimer) clearTimeout(hashCacheWriteTimer)
+    hashCacheWriteTimer = setTimeout(() => {
+      if (!hashCachePath) return
+      const snapshot = Object.fromEntries(hashCache)
+      hashCacheWriteQueue = hashCacheWriteQueue
+        .then(() => fsp.mkdir(path.dirname(hashCachePath!), { recursive: true }))
+        .then(() => fsp.writeFile(hashCachePath!, JSON.stringify(snapshot), 'utf8'))
+        .catch((error) => logger.warn('Unable to write file hash cache:', error))
+    }, 250)
+    return hash
+  }
+  hashFunctionPatched = true
+}
+
+function normalizeJvmMemoryArgs(args: string[], memoryMb: number): string[] {
+  const filteredArgs = args.filter((arg) => !/^-Xm[ sx]\d+M$/i.test(arg))
+  return [...filteredArgs, `-Xmx${memoryMb}M`, `-Xms${memoryMb}M`]
+}
 
 
 function sanitizeSlug(slug: string): string {
@@ -32,9 +133,81 @@ function getProfileRoot(profileSlug: string): string {
   return path.join(getServerFolder(ROOT_ID), sanitizeSlug(profileSlug))
 }
 
+function getModsPath(profileSlug: string): string {
+  return path.join(getProfileRoot(profileSlug), 'mods')
+}
+
+function getServerModsStatePath(profileSlug: string): string {
+  return path.join(getProfileRoot(profileSlug), '.katapulte-server-mods.json')
+}
+
+function normalizeModName(value: string): string {
+  return path.basename(value).toLowerCase().replace(/\.disabled$/, '')
+}
+
+async function fetchServerManifest(profileSlug: string): Promise<Set<string>> {
+  const response = await fetch(`${ADMINTOOL_URL}/api/files-updater/${encodeURIComponent(profileSlug)}`)
+  if (!response.ok) {
+    throw new Error(`Impossible de télécharger le manifeste des mods (HTTP ${response.status})`)
+  }
+
+  const manifest = (await response.json()) as { files?: IServerManifestFile[] }
+  return new Set(
+    (manifest.files ?? [])
+      .filter((file) => {
+        const manifestPath = (file.path ?? file.name ?? '').replaceAll('\\', '/').toLowerCase()
+        return (file.type ?? '').toUpperCase() === 'MOD' || manifestPath.startsWith('mods/') || manifestPath.includes('/mods/')
+      })
+      .map((file) => normalizeModName(file.path ?? file.name ?? ''))
+      .filter((name) => name.endsWith('.jar'))
+  )
+}
+
+async function synchronizeServerMods(profileSlug: string, serverFiles?: Set<string>) {
+  const modsPath = getModsPath(profileSlug)
+  const statePath = getServerModsStatePath(profileSlug)
+  await fsp.mkdir(modsPath, { recursive: true })
+  const officialServerFiles = serverFiles ?? await fetchServerManifest(profileSlug)
+
+  let previousServerFiles: string[] = []
+  let hasPreviousState = false
+  try {
+    const state = JSON.parse(await fsp.readFile(statePath, 'utf8')) as IServerModsState
+    previousServerFiles = state.files ?? []
+    hasPreviousState = true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('Unable to read server mods state:', error)
+    }
+  }
+
+  if (hasPreviousState) {
+    for (const file of previousServerFiles) {
+      if (officialServerFiles.has(file)) continue
+      for (const candidate of [file, `${file}.disabled`]) {
+        const candidatePath = path.join(modsPath, candidate)
+        try {
+          await fsp.unlink(candidatePath)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            logger.warn(`Unable to remove obsolete server mod ${candidate}:`, error)
+          }
+        }
+      }
+    }
+  }
+
+  await fsp.writeFile(statePath, JSON.stringify({ files: [...officialServerFiles] }, null, 2))
+}
+
 export function registerLauncherHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('game:launch', async (_event, payload: { account: Account; settings: IGameSettings; profileSlug: string }) => {
     const { account, settings, profileSlug } = payload
+    await prepareFileHashCache(profileSlug)
+    const normalizedSettings = normalizeGameSettings(settings)
+    const isLiteProfile = profileSlug.toLowerCase().includes('-fc')
+    const effectiveRamGb = isLiteProfile ? Math.min(normalizedSettings.memory.ram, 4) : normalizedSettings.memory.ram
+    const effectiveRamMb = effectiveRamGb * 1024
     const java = settings.java === 'system' ? { install: 'manual' as const, absolutePath: 'java' } : { install: 'auto' as const }
     logger.log('Launching')
 
@@ -48,15 +221,22 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
       },
       java: java,
       memory: {
-        min: +settings.memory.min * 1024,
-        max: +settings.memory.max * 1024
+        min: effectiveRamMb,
+        // eml-lib keeps max at 1023 when max is not strictly greater than min.
+        max: effectiveRamMb + 1
       },
       window: {
-        width: settings.resolution.width,
-        height: settings.resolution.height,
-        fullscreen: settings.resolution.fullscreen
+        width: normalizedSettings.resolution.width,
+        height: normalizedSettings.resolution.height,
+        fullscreen: normalizedSettings.resolution.fullscreen
       }
     })
+
+    const runtimeLauncher = launcher as unknown as LauncherRuntime
+    const originalRun = runtimeLauncher.run
+    runtimeLauncher.run = function runWithNormalizedMemory(javaPath, args) {
+      return originalRun.call(this, javaPath, normalizeJvmMemoryArgs(args, effectiveRamMb))
+    }
 
     launcher.on('launch_compute_download', () => {
       logger.log('Computing download...')
@@ -176,13 +356,15 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
     })
 
     launcher.on('launch_debug', (message) => {
-      safeSend(mainWindow, 'game:launch_debug', message)
+      const normalizedMessage = message.replace(/-Xmx\d+M|-Xms\d+M/gi, '').replace(/\s{2,}/g, ' ').trim()
+      safeSend(mainWindow, 'game:launch_debug', `${normalizedMessage} -Xmx${effectiveRamMb}M -Xms${effectiveRamMb}M`)
     })
     launcher.on('patch_debug', (message) => {
       safeSend(mainWindow, 'game:patch_debug', message)
     })
 
     try {
+      await synchronizeServerMods(profileSlug)
       await launcher.launch()
     } catch (err) {
       logger.error('Launcher error:', err)
@@ -192,8 +374,7 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('game:open_mods_folder', async (_event, payload: { profileSlug: string }) => {
     try {
-      const profileRoot = getProfileRoot(payload.profileSlug)
-      const modsPath = path.join(profileRoot, 'mods')
+      const modsPath = getModsPath(payload.profileSlug)
 
       fs.mkdirSync(modsPath, { recursive: true })
       const openError = await shell.openPath(modsPath)
@@ -209,7 +390,62 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
     }
   })
 
-  ipcMain.handle('game:uninstall_profile', async (_event, payload: { profileSlug: string }) => {
+  ipcMain.handle('mods:list', async (_event, payload: { profileSlug: string }): Promise<IModEntry[]> => {
+    const modsPath = getModsPath(payload.profileSlug)
+    const managedMods = await fetchServerManifest(payload.profileSlug)
+    await synchronizeServerMods(payload.profileSlug, managedMods)
+    await fsp.mkdir(modsPath, { recursive: true })
+    const entries = await fsp.readdir(modsPath, { withFileTypes: true })
+    const mods = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && (entry.name.toLowerCase().endsWith('.jar') || entry.name.toLowerCase().endsWith('.jar.disabled')))
+        .map(async (entry) => {
+          const file = await fsp.stat(path.join(modsPath, entry.name))
+          return {
+            name: entry.name,
+            enabled: entry.name.toLowerCase().endsWith('.jar'),
+            size: file.size,
+            managed: managedMods.has(normalizeModName(entry.name))
+          }
+        })
+    )
+    const installedMods = new Set(mods.map((mod) => normalizeModName(mod.name)))
+    for (const serverMod of managedMods) {
+      if (installedMods.has(serverMod)) continue
+      mods.push({
+        name: path.basename(serverMod),
+        enabled: false,
+        size: 0,
+        managed: true
+      })
+    }
+    return mods.sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  ipcMain.handle('mods:toggle', async (_event, payload: { profileSlug: string; name: string }): Promise<IModEntry> => {
+    const name = path.basename(payload.name)
+    if (!name.toLowerCase().endsWith('.jar') && !name.toLowerCase().endsWith('.jar.disabled')) {
+      throw new Error('Le fichier fourni n’est pas un mod .jar')
+    }
+
+    const modsPath = getModsPath(payload.profileSlug)
+    try {
+      const state = JSON.parse(await fsp.readFile(getServerModsStatePath(payload.profileSlug), 'utf8')) as IServerModsState
+      if ((state.files ?? []).includes(normalizeModName(name))) {
+        throw new Error('Les mods serveur obligatoires ne peuvent pas être désactivés')
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('obligatoires')) throw error
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    const source = path.join(modsPath, name)
+    const target = path.join(modsPath, name.toLowerCase().endsWith('.jar.disabled') ? name.slice(0, -'.disabled'.length) : `${name}.disabled`)
+    await fsp.rename(source, target)
+    const stats = await fsp.stat(target)
+    return { name: path.basename(target), enabled: target.toLowerCase().endsWith('.jar'), size: stats.size, managed: false }
+  })
+
+  ipcMain.handle('game:uninstall', async (_event, payload: { profileSlug: string }) => {
     try {
       const profileRoot = getProfileRoot(payload.profileSlug)
 
@@ -231,7 +467,9 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
       // remove the ipc handler for game:launch to avoid stale references
       ipcMain.removeHandler('game:launch')
       ipcMain.removeHandler('game:open_mods_folder')
-      ipcMain.removeHandler('game:uninstall_profile')
+      ipcMain.removeHandler('mods:list')
+      ipcMain.removeHandler('mods:toggle')
+      ipcMain.removeHandler('game:uninstall')
       // remove any listeners attached to launcher instances
       // Note: launcher is scoped per-launch; this ensures any persisted references are cleaned by GC
       // If additional global child processes are used, ensure they are also cleaned here.

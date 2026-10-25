@@ -7,7 +7,7 @@ import { registerServerHandlers } from './handlers/server'
 import { registerNewsHandlers } from './handlers/news'
 import { registerBackgroundHandlers } from './handlers/background'
 import { registerMaintenanceHandlers } from './handlers/maintenance'
-import { registerBootstrapHandlers } from './handlers/bootstraps'
+import { registerBootstrapHandlers, startAutomaticUpdateCheck } from './handlers/bootstraps'
 import logger from 'electron-log/main'
 import { registerProfilesHandlers } from './handlers/profiles'
 import { registerSkinHandlers } from './handlers/skin'
@@ -146,10 +146,10 @@ app.whenReady().then(() => {
     registerBootstrapHandlers(mainWindow)
     registerLauncherHandlers(mainWindow)
     registerSettingsHandlers()
+    startAutomaticUpdateCheck()
   }
 })
 
 app.on('window-all-closed', () => {
   app.quit()
 })
-

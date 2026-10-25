@@ -45,9 +45,6 @@ async function updateUserInterface() {
   if (typeSettingsEl) typeSettingsEl.innerHTML = getAccountIcon(shared.account.meta.type)
   if (avatarSettingsEl) avatarSettingsEl.src = shared.avatar?.url ?? 'https://minotar.net/avatar/steve/256.png'
 
-  shared.resetMainView()
-  shared.resetSkinViews()
-  shared.resetCapesViews()
 }
 
 export function setView(view: ViewName) {
@@ -56,7 +53,9 @@ export function setView(view: ViewName) {
 
   const isOverlay = target.classList.contains('overlay')
 
-  if (view === 'settings') resetSettingsTab()
+  if (view === 'settings') {
+    resetSettingsTab()
+  }
 
   if (!isOverlay) {
     document.querySelectorAll('.view').forEach((el) => {
@@ -107,6 +106,4 @@ function resetSettingsTab() {
   tabButtons[0].classList.add('active')
   tabContents[0].classList.add('active')
 }
-
-
 

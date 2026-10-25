@@ -1,5 +1,5 @@
 import { setView, closeOverlay } from '../state'
-import { auth, settings, system, skin } from '../ipc'
+import { auth, game, settings, system, skin } from '../ipc'
 import { Dialog } from './dialog'
 import type { IGameSettings } from '../../electron/handlers/settings'
 import shared from '../shared'
@@ -34,9 +34,11 @@ export async function initSettings() {
 
 function initUIListeners() {
   const closeBtn = document.getElementById('btn-close-settings')
+  const settingsOverlay = document.getElementById('view-settings')
   const tabContents = document.querySelectorAll('.tab-content')
   const tabButtons = document.querySelectorAll('.nav-btn')
   const logoutBtn = document.getElementById('btn-logout')
+  const uninstallGameBtn = document.getElementById('btn-uninstall-game')
 
   const addSkinUrlBtn = document.getElementById('btn-add-skin-url')!
   const addSkinFileBtn = document.getElementById('btn-add-skin-file')!
@@ -58,6 +60,12 @@ function initUIListeners() {
     closeOverlay('settings')
   })
 
+  settingsOverlay?.addEventListener('click', async (event) => {
+    if (event.target !== settingsOverlay) return
+    await saveSettings()
+    closeOverlay('settings')
+  })
+
   logoutBtn?.addEventListener('click', async () => {
     if (
       await Dialog.show('Log out?', [
@@ -69,6 +77,20 @@ function initUIListeners() {
       closeOverlay('settings')
       setView('login')
     }
+  })
+
+  uninstallGameBtn?.addEventListener('click', async () => {
+    if (!shared.activeProfileSlug) return
+    const confirmed = await Dialog.show('Supprimer les fichiers du jeu pour ce profil ?', [
+      { text: 'Annuler', type: 'cancel' },
+      { text: 'Désinstaller', type: 'danger' }
+    ])
+    if (!confirmed) return
+    const result = await game.uninstall(shared.activeProfileSlug)
+    await Dialog.show(
+      result.success ? 'Les fichiers du jeu ont été désinstallés.' : `Échec de la désinstallation : ${result.message ?? 'Erreur inconnue'}`,
+      [{ text: 'OK', type: 'ok' }]
+    )
   })
 
   addSkinUrlBtn?.addEventListener('click', () => {
@@ -141,51 +163,99 @@ function initUIListeners() {
       btn.classList.add('active')
       const targetTab = btn.getAttribute('data-tab')
       tabContents.forEach((c) => (c.id === `tab-${targetTab}` ? c.classList.add('active') : c.classList.remove('active')))
+      if (targetTab === 'skin') {
+        void shared.resetMainView()
+        void shared.resetSkinViews()
+        void shared.resetCapesViews()
+      }
+      if (targetTab === 'mods') void loadMods()
     })
   })
+}
+
+async function loadMods() {
+  const serverList = document.getElementById('server-mods-list')
+  const clientList = document.getElementById('client-mods-list')
+  if (!serverList || !clientList || !shared.activeProfileSlug) return
+  serverList.innerHTML = '<p class="mods-empty">Chargement des mods...</p>'
+  clientList.innerHTML = ''
+  try {
+    const mods = await game.mods.list(shared.activeProfileSlug)
+    const serverMods = mods.filter((mod) => mod.managed)
+    const clientMods = mods.filter((mod) => !mod.managed)
+    serverList.innerHTML = ''
+    clientList.innerHTML = ''
+    renderMods(serverList, serverMods, 'Aucun mod serveur installé.')
+    renderMods(clientList, clientMods, 'Aucun mod personnel installé.')
+  } catch (error) {
+    serverList.innerHTML = '<p class="mods-empty">Impossible de charger les mods.</p>'
+    clientList.innerHTML = ''
+  }
+}
+
+function displayModName(name: string): string {
+  return name.replace(/\.jar\.disabled$/i, '').replace(/\.jar$/i, '')
+}
+
+function renderMods(list: HTMLElement, mods: Awaited<ReturnType<typeof game.mods.list>>, emptyMessage: string) {
+  if (!mods.length) {
+    list.innerHTML = `<p class="mods-empty">${emptyMessage}</p>`
+    return
+  }
+
+  for (const mod of mods) {
+      const row = document.createElement('div')
+      row.className = `mod-row${mod.managed ? ' server-mod' : ' client-mod'}`
+      const label = document.createElement('span')
+      label.textContent = displayModName(mod.name)
+      row.appendChild(label)
+      if (mod.managed) {
+        const badge = document.createElement('span')
+        badge.className = 'mod-badge'
+        badge.textContent = 'Serveur · Obligatoire'
+        row.appendChild(badge)
+      } else {
+        const toggle = document.createElement('button')
+        toggle.className = `mod-toggle${mod.enabled ? ' enabled' : ''}`
+        toggle.textContent = mod.enabled ? 'ON' : 'OFF'
+        toggle.setAttribute('aria-label', `${mod.enabled ? 'Désactiver' : 'Activer'} le mod ${displayModName(mod.name)}`)
+        toggle.addEventListener('click', async () => {
+          toggle.disabled = true
+          try {
+            await game.mods.toggle(shared.activeProfileSlug!, mod.name)
+            await loadMods()
+          } catch (error) {
+            await Dialog.show(`Impossible de modifier ${mod.name}.`, [{ text: 'Fermer', type: 'ok' }])
+          } finally {
+            toggle.disabled = false
+          }
+        })
+        row.appendChild(toggle)
+      }
+      list.appendChild(row)
+  }
 }
 
 function initDualSlider(maxRamSystem: number) {
   maxRamSystem = Math.min(maxRamSystem, 16)
   const minInput = document.getElementById('ram-min') as HTMLInputElement
-  const maxInput = document.getElementById('ram-max') as HTMLInputElement
   const fill = document.getElementById('ram-track-fill')
   const minLabel = document.getElementById('ram-min-label')
-  const maxLabel = document.getElementById('ram-max-label')
 
-  if (!minInput || !maxInput || !fill) return
+  if (!minInput || !fill) return
 
   minInput.max = maxRamSystem.toString()
-  maxInput.max = maxRamSystem.toString()
-
-  const gap = 0.5
-  const updateSlider = (e?: Event) => {
-    let minVal = parseFloat(minInput.value)
-    let maxVal = parseFloat(maxInput.value)
-
-    if (maxVal - minVal < gap) {
-      if (e?.target === minInput) {
-        minInput.value = (maxVal - gap).toString()
-        minVal = parseFloat(minInput.value)
-      } else {
-        maxInput.value = (minVal + gap).toString()
-        maxVal = parseFloat(maxInput.value)
-      }
-    }
-
-    if (minLabel) minLabel.innerText = `${minVal} GB`
-    if (maxLabel) maxLabel.innerText = `${maxVal} GB`
+  const updateSlider = () => {
+    const ram = parseFloat(minInput.value)
+    if (minLabel) minLabel.innerText = `${ram} GB`
 
     const range = maxRamSystem - parseFloat(minInput.min)
-    const minPercent = ((minVal - parseFloat(minInput.min)) / range) * 100
-    const maxPercent = ((maxVal - parseFloat(maxInput.min)) / range) * 100
-
-    fill.style.left = `${minPercent}%`
-    fill.style.width = `${maxPercent - minPercent}%`
+    const percent = ((ram - parseFloat(minInput.min)) / range) * 100
+    fill.style.left = '0%'
+    fill.style.width = `${percent}%`
   }
 
   minInput.addEventListener('input', updateSlider)
-  maxInput.addEventListener('input', updateSlider)
   updateSlider()
 }
 
@@ -193,13 +263,11 @@ function initFormValues(resolution: { width: number; height: number }) {
   if (!currentSettings) return
 
   const minInput = document.getElementById('ram-min') as HTMLInputElement
-  const maxInput = document.getElementById('ram-max') as HTMLInputElement
   const resolutionSelect = document.getElementById('resolution-select') as HTMLSelectElement
   const launcherActionSelect = document.getElementById('launcher-action-select') as HTMLSelectElement
   const javaSelect = document.getElementById('java-select') as HTMLSelectElement
 
-  if (minInput) minInput.value = currentSettings.memory.min + ''
-  if (maxInput) maxInput.value = currentSettings.memory.max + ''
+  if (minInput) minInput.value = currentSettings.memory.ram + ''
   if (resolutionSelect) {
     const availableResolutions = getAvailableResolutions(resolution)
     resolutionSelect.innerHTML = ''
@@ -222,7 +290,6 @@ function initFormValues(resolution: { width: number; height: number }) {
 
 async function saveSettings() {
   const minInput = document.getElementById('ram-min') as HTMLInputElement
-  const maxInput = document.getElementById('ram-max') as HTMLInputElement
   const launcherActionSelect = document.getElementById('launcher-action-select') as HTMLSelectElement
   const resolutionSelect = document.getElementById('resolution-select') as HTMLSelectElement
   const javaSelect = document.getElementById('java-select') as HTMLSelectElement
@@ -230,8 +297,7 @@ async function saveSettings() {
   const newSettings: IGameSettings = {
     ...currentSettings,
     memory: {
-      min: parseFloat(minInput.value),
-      max: parseFloat(maxInput.value)
+      ram: parseFloat(minInput.value)
     },
     resolution: {
       height: resolutionList.find((r) => r.value === resolutionSelect.value)?.height ?? 854,
@@ -288,4 +354,3 @@ async function addSkin() {
 function getAvailableResolutions(systemResolution: { width: number; height: number }) {
   return resolutionList.filter((res) => res.width <= systemResolution.width && res.height <= systemResolution.height)
 }
-

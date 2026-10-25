@@ -13,16 +13,24 @@ class DialogSystem {
   private readonly messageEl: HTMLElement
   private readonly titleEl: HTMLElement
   private readonly buttonsEl: HTMLElement
+  private readonly closeButton: HTMLButtonElement
+  private activeResolve: ((value: unknown) => void) | null = null
 
   constructor() {
     this.overlay = document.getElementById('custom-dialog')!
     this.messageEl = document.getElementById('dialog-message')!
     this.titleEl = document.getElementById('dialog-title')!
     this.buttonsEl = document.getElementById('dialog-buttons')!
+    this.closeButton = document.getElementById('dialog-close') as HTMLButtonElement
+    this.closeButton.addEventListener('click', () => this.close(false))
+    this.overlay.addEventListener('click', (event) => {
+      if (event.target === this.overlay) this.close(false)
+    })
   }
 
   public async show<T = boolean>(message: string, buttons?: DialogButton[], title?: string): Promise<T> {
     return new Promise<T>((resolve) => {
+      this.activeResolve = resolve as (value: unknown) => void
       this.messageEl.innerText = message
       this.buttonsEl.innerHTML = ''
 
@@ -44,23 +52,21 @@ class DialogSystem {
         btn.className = `btn btn-${btnConfig.type === 'ok' ? 'secondary' : btnConfig.type === 'danger' ? 'danger' : 'secondary'}`
 
         btn.onclick = async () => {
-          this.close()
-
           if (btnConfig.action) {
             const result = await btnConfig.action()
-            resolve(result !== undefined ? result : (true as any))
+            this.close(result !== undefined ? result : true)
           } else {
             switch (btnConfig.type) {
               case 'cancel':
-                resolve(false as any)
+                this.close(false)
                 break
               case 'ok':
               case 'danger':
-                resolve(true as any)
+                this.close(true)
                 break
               case 'other':
                 logger.warn("The 'other' type button requires an action!")
-                resolve(null as any)
+                this.close(null)
                 break
             }
           }
@@ -73,10 +79,11 @@ class DialogSystem {
     })
   }
 
-  private close() {
+  private close(result: unknown = false) {
     this.overlay.classList.add('hidden')
+    this.activeResolve?.(result)
+    this.activeResolve = null
   }
 }
 
 export const Dialog = new DialogSystem()
-

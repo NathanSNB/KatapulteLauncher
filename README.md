@@ -2,7 +2,7 @@
 
 Launcher Electron pour le projet Katapulte, basé sur une architecture moderne TypeScript + Vite + Electron et intégrant la librairie EML pour la gestion de l’authentification Microsoft, des profils de jeu, du lancement du client Minecraft et des mises à jour.
 
-Ce projet correspond à la V1 de la base de lancement. Il a été pensé pour pouvoir être repris, étendu et adapté par un autre développeur sans repartir de zéro.
+La version stable actuelle est la **V2.0.0**. Elle consolide la base V1 avec une gestion complète des mods, un auto-updater différentiel, une interface modernisée et une préparation de lancement plus fiable.
 
 > Documentation EML utile : https://emlproject.com/docs
 
@@ -10,6 +10,7 @@ Ce projet correspond à la V1 de la base de lancement. Il a été pensé pour po
 
 - [Vue d’ensemble](#vue-densemble)
 - [Fonctionnalités principales](#fonctionnalités-principales)
+- [Nouveautés V2.0.0](#nouveautés-v200)
 - [Stack technique](#stack-technique)
 - [Architecture du projet](#architecture-du-projet)
 - [Prérequis](#prérequis)
@@ -49,12 +50,22 @@ L’application est structurée en deux grandes parties :
 - Sauvegarde des sessions utilisateur dans le dossier utilisateur d’Electron.
 - Chargement des profils et des serveurs depuis la configuration EML / API distante.
 - Démarrage du jeu avec gestion des réglages Java, mémoire et résolution.
-- Vérification des mises à jour de bootstraps et installation automatique.
+- Téléchargement automatique des mises à jour du launcher via `electron-updater`, puis installation différentielle au redémarrage.
 - Système de news/annonces dans l’interface.
 - Gestion de l’état de maintenance du launcher.
 - Gestion des skins, capes et avatars du compte.
 - Vérification du status du serveur (ping / joueurs en ligne).
 - Interface dark mode avec vues login, home, settings et maintenance.
+
+## Nouveautés V2.0.0
+
+La release **V2.0.0** apporte les améliorations suivantes :
+
+- **Gestion des mods client et serveur** : les mods officiels sont détectés depuis le manifeste du serveur et affichés comme obligatoires ; les mods personnels peuvent être activés ou désactivés depuis les paramètres.
+- **Vérification SHA-1 optimisée** : un cache par profil réutilise les hashes lorsque la taille et la date de modification (`mtime`) n’ont pas changé, ce qui ramène la vérification des fichiers inchangés à environ **1 seconde** après le premier contrôle.
+- **Auto-updater sans réinstallation complète** : les mises à jour du launcher sont téléchargées en arrière-plan et appliquées au redémarrage via `electron-updater`.
+- **Refonte UI/UX des modales** : fermeture par clic sur le backdrop sombre, bouton de fermeture explicite et fenêtre News avec contenu défilable.
+- **Correction de la mémoire Java** : `-Xms` et `-Xmx` utilisent la même valeur effective, y compris lorsqu’une limite spéciale de profil s’applique, afin d’éviter les configurations JVM invalides.
 
 ## Stack technique
 
@@ -217,12 +228,7 @@ Les livrables sont généralement générés dans le dossier `release/` selon la
 
 
 ### V2 — Polissage et stabilité
-
-- [x] Suppression des fichiers de jeu
-- [ ] Ajout de skin perso
-- [x] Ajout de vérification Server-Side du nb de launcher installé 
-- [x] Accéder au .natsnb68 de la version 
-- [x] Quand le jeu se lance que le launcher se mette en mod logs 
+La version V2.0.0 est préparée pour une release officielle et un packaging automatisé via GitHub Actions.
 
 ## GitHub Actions - packaging multi-plateforme
 
@@ -281,7 +287,7 @@ jobs:
 
 ### Bonnes pratiques
 
-- utiliser un tag Git versionné (`v1.0.3`, `v1.1.0`, etc.),
+- utiliser un tag Git versionné (`v2.0.0`, puis `v2.0.1`, etc.),
 - ne pas publier une release sans incrémenter la version dans `package.json`,
 - conserver un build Windows, macOS et Linux séparés dans les artefacts,
 - sécuriser les variables d’environnement si tu utilises GitHub Releases / signing,
@@ -297,7 +303,7 @@ C’est l’étape la plus importante. Pour que le système de mise à jour auto
 
 Ouvre le fichier `package.json` situé à la racine de ton projet.
 
-Change la pour ton nouveau numéro de version, par exemple : `"version": "1.x.x"`.
+Pour cette release, la version doit être `"version": "2.0.0"`. Pour les versions suivantes, remplace-la par le nouveau numéro sémantique (`2.0.1`, `2.1.0`, etc.).
 
 Sauvegarde le fichier.
 
@@ -311,7 +317,7 @@ Dans le terminal :
 
 ```bash
 git add .
-git commit -m "Release v1.0.3 : Ajout de la nouvelle interface"
+git commit -m "Release v2.0.0 : gestion des mods et refonte UI"
 git push origin main
 ```
 
@@ -330,14 +336,14 @@ Une fois le build terminé :
 
 1. aller dans l’onglet Releases de GitHub,
 2. créer une nouvelle release,
-3. sélectionner le tag correspondant (ex. `v1.0.3`),
+3. sélectionner le tag correspondant (pour cette release : `v2.0.0`),
 4. ajouter les notes de version,
 5. attacher les fichiers buildés,
 6. publier la release.
 
 ### 5. Vérifier la mise à jour du launcher
 
-Ensuite, un utilisateur qui lance le logiciel va recevoir la nouvelle version automatiquement si la mise à jour est correctement branchée côté Electron / GitHub Releases.
+Ensuite, un utilisateur qui lance le logiciel vérifie les releases GitHub, télécharge la mise à jour en arrière-plan et l’applique au prochain redémarrage. `electron-builder` doit publier les artefacts de mise à jour (`latest.yml`, installeur et fichier blockmap) avec chaque release.
 
 ## Configuration clé du launcher
 
@@ -357,7 +363,7 @@ Ces valeurs pilotent le backend EML et l’identifiant racine du launcher. Si le
 Les réglages par défaut sont définis dans `electron/handlers/settings.ts` :
 
 - Java : bundled ou system
-- Memory : min / max
+- Memory : valeur RAM unique en Go
 - Résolution
 - Action du launcher après lancement : close / keep / hide
 

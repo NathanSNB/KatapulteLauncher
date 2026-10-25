@@ -162,7 +162,7 @@
     font-size: 4.5rem;
     font-weight: 800;
     margin: 0 0 15px 0;
-    text-shadow: 0 5px 15px rgba(0,0,0,0.6);
+    text-shadow: 0 3px 0 rgba(0, 0, 0, 0.75), 0 6px 18px rgba(0, 0, 0, 0.85);
     letter-spacing: -1px;
   }
   
@@ -171,7 +171,7 @@
     color: #f0f0f0;
     max-width: 650px;
     margin-bottom: 50px;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 4px 12px rgba(0, 0, 0, 0.8);
     line-height: 1.6;
   }
   
@@ -205,10 +205,11 @@
         gap: 10px;
         
         &.btn-play-normal {
-          background: var(--primary);
+          background: linear-gradient(135deg, #008ecc, #7056c7);
           color: white;
-          box-shadow: 0 4px 15px #1f4f63;
-          &:hover { background: var(--primary-hover); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 142, 204, 0.6); }
+          box-shadow: 0 5px 18px rgba(0, 78, 130, 0.65), 0 0 20px rgba(112, 86, 199, 0.25);
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+          &:hover { background: linear-gradient(135deg, #12a7e8, #8268df); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 142, 204, 0.65); }
         }
         
         &.btn-play-lite {
@@ -254,15 +255,6 @@
         padding: 0;
       }
 
-      .btn-launch-tool.uninstall {
-        color: #ffd2d2;
-        border-color: rgba(255, 95, 95, 0.45);
-
-        &:hover {
-          background: rgba(66, 13, 13, 0.7);
-          border-color: rgba(255, 120, 120, 0.7);
-        }
-      }
     }
   }
 }
@@ -302,7 +294,14 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
-      overflow: hidden; /* Blocage strict du scroll */
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 6px;
+
+      &::-webkit-scrollbar { width: 6px; }
+      &::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 3px; }
+      &::-webkit-scrollbar-thumb { background: rgba(126, 87, 194, 0.7); border-radius: 3px; }
+      &::-webkit-scrollbar-thumb:hover { background: var(--primary); }
       
       .mini-article {
         font-size: 13px;
@@ -312,6 +311,7 @@
         .title { font-weight: 600; color: #fff; }
       }
     }
+
   }
   .btn-discord {
     background: #5865F2;
@@ -329,5 +329,30 @@
     box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
     
     &:hover { background: #4752C4; transform: translateY(-2px); }
+  }
+}
+
+.news-dialog {
+  width: min(90vw, 600px) !important;
+  max-height: min(80vh, 620px);
+  margin: 40px !important;
+
+  h2 {
+    color: white;
+    font-size: 18px;
+    margin: 0;
+    padding-right: 24px;
+  }
+
+  .news-dialog-content {
+    color: #ddd;
+    font-size: 14px;
+    overflow-y: auto;
+    max-height: 55vh;
+    padding-right: 8px;
+
+    &::-webkit-scrollbar { width: 7px; }
+    &::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
+    &::-webkit-scrollbar-thumb { background: rgba(126, 87, 194, 0.75); border-radius: 4px; }
   }
 }

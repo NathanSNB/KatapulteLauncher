@@ -1,5 +1,5 @@
 import type { Account, IAvatar, ICape, ISkin } from 'eml-lib'
-import { SkinViewer, WalkingAnimation } from 'skinview3d'
+import type { SkinViewer } from 'skinview3d'
 import { skin } from './ipc'
 import { Dialog } from './views/dialog'
 import logger from 'electron-log/renderer'
@@ -11,11 +11,19 @@ const DEFAULT_SKIN = {
   state: 'active'
 }
 
+let skinview3dPromise: Promise<typeof import('skinview3d')> | null = null
+
+function loadSkinview3d() {
+  skinview3dPromise ??= import('skinview3d')
+  return skinview3dPromise
+}
+
 const shared = {
   account: null as Account | null,
   skins: null as ISkin[] | null,
   capes: null as ICape[] | null,
   avatar: null as IAvatar | null,
+  activeProfileSlug: null as string | null,
   mainSkinViewer: null as SkinViewer | null,
   auxiliarySkinViewer: null as SkinViewer | null,
   cachedSkinThumbnails: new Map<string, string>(),
@@ -24,6 +32,7 @@ const shared = {
    * `skins` should be updated before calling this function.
    */
   resetMainView: async () => {
+    const { SkinViewer, WalkingAnimation } = await loadSkinview3d()
     const skinCanvasSettingsEl = document.getElementById('skin-container') as HTMLCanvasElement
 
     const activeSkin = shared.skins?.find((s) => s.state === 'active') ?? DEFAULT_SKIN
@@ -53,6 +62,7 @@ const shared = {
    * `skins` should be updated before calling this function.
    */
   resetSkinViews: async () => {
+    const { SkinViewer, WalkingAnimation } = await loadSkinview3d()
     const skinGallerySettingsEl = document.getElementById('skin-gallery')!
 
     skinGallerySettingsEl.innerHTML = ''
@@ -206,4 +216,3 @@ const shared = {
 }
 
 export default shared
-

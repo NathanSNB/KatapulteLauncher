@@ -7,14 +7,18 @@ import * as path from 'node:path'
 
 const sessionPath = path.join(app.getPath('userData'), 'session.json')
 
-export type IAuthResponse = { success: true; account: Account } | { success: false; error: string }
+export type IAuthResponse = { success: true; account: Account } | { success: false; error?: string }
 
 export function registerAuthHandlers(mainWindow: Electron.BrowserWindow) {
   let auth: MicrosoftAuth | null = new MicrosoftAuth(mainWindow)
 
   ipcMain.handle('auth:login', async () => {
     try {
-      const account = await auth.auth()
+      const currentAuth = auth
+      if (!currentAuth) {
+        return { success: false, error: 'Authentication is unavailable' } as IAuthResponse
+      }
+      const account = await currentAuth.auth()
       fs.writeFileSync(sessionPath, JSON.stringify(account))
       return { success: true, account } as IAuthResponse
     } catch (err: any) {
@@ -33,11 +37,15 @@ export function registerAuthHandlers(mainWindow: Electron.BrowserWindow) {
       const savedSession = JSON.parse(data) as Account
 
       if (savedSession && savedSession.uuid) {
-        const valid = await auth.validate(savedSession)
+        const currentAuth = auth
+        if (!currentAuth) {
+          return { success: false, error: 'Authentication is unavailable' } as IAuthResponse
+        }
+        const valid = await currentAuth.validate(savedSession)
         if (valid) {
           return { success: true, account: savedSession } as IAuthResponse
         }
-        const account = await auth.refresh(savedSession)
+        const account = await currentAuth.refresh(savedSession)
         fs.writeFileSync(sessionPath, JSON.stringify(account))
         return { success: true, account } as IAuthResponse
       }
@@ -71,5 +79,4 @@ export function registerAuthHandlers(mainWindow: Electron.BrowserWindow) {
     }
   })
 }
-
 

@@ -1,4 +1,5 @@
 import type { IGameSettings, ISystemInfo } from '../electron/handlers/settings'
+import type { IModEntry } from '../electron/handlers/launcher'
 import type { IAuthResponse } from '../electron/handlers/auth'
 import type {
   Account,
@@ -21,6 +22,8 @@ import type {
   IAvatar
 } from 'eml-lib'
 
+type IpcCleanup = () => void
+
 declare global {
   interface Window {
     api: {
@@ -42,7 +45,7 @@ declare global {
         hideCape: () => Promise<ICape[] | null>
       }
       profiles: {
-        get: () => Promise<IProfile[]>
+        get: () => Promise<IProfile[] | null>
       }
       server: {
         getStatus: (ip: string, port?: number) => Promise<IServerStatus | null>
@@ -59,51 +62,55 @@ declare global {
       }
       bootstraps: {
         check: () => Promise<IBootstraps>
-        download: () => Promise<string>
+        download: () => Promise<string[]>
         install: () => Promise<void>
-        downloadProgress: (callback: (value: DownloaderEvents['download_progress'][0]) => void) => void
-        downloadEnd: (callback: (value: DownloaderEvents['download_end'][0]) => void) => void
-        error: (callback: (value: BootstrapsEvents['bootstraps_error'][0]) => void) => void
+        downloadProgress: (callback: (value: DownloaderEvents['download_progress'][0]) => void) => IpcCleanup
+        downloadEnd: (callback: (value: DownloaderEvents['download_end'][0]) => void) => IpcCleanup
+        error: (callback: (value: BootstrapsEvents['bootstraps_error'][0]) => void) => IpcCleanup
       }
       game: {
         launch: (payload: { account: Account; settings: IGameSettings, profileSlug: string }) => Promise<void>
         openModsFolder: (profileSlug: string) => Promise<{ success: boolean; message?: string; path?: string }>
-        uninstallProfile: (profileSlug: string) => Promise<{ success: boolean; message?: string; path?: string }>
+        uninstall: (profileSlug: string) => Promise<{ success: boolean; message?: string; path?: string }>
+        mods: {
+          list: (profileSlug: string) => Promise<IModEntry[]>
+          toggle: (profileSlug: string, name: string) => Promise<IModEntry>
+        }
 
-        launchComputeDownload: (callback: () => void) => void
+        launchComputeDownload: (callback: () => void) => IpcCleanup
 
-        launchDownload: (callback: (value: LauncherEvents['launch_download'][0]) => void) => void
-        downloadProgress: (callback: (value: DownloaderEvents['download_progress'][0]) => void) => void
-        downloadError: (callback: (value: DownloaderEvents['download_error'][0]) => void) => void
-        downloadEnd: (callback: (value: DownloaderEvents['download_end'][0]) => void) => void
+        launchDownload: (callback: (value: LauncherEvents['launch_download'][0]) => void) => IpcCleanup
+        downloadProgress: (callback: (value: DownloaderEvents['download_progress'][0]) => void) => IpcCleanup
+        downloadError: (callback: (value: DownloaderEvents['download_error'][0]) => void) => IpcCleanup
+        downloadEnd: (callback: (value: DownloaderEvents['download_end'][0]) => void) => IpcCleanup
 
-        launchInstallLoader: (callback: (value: LauncherEvents['launch_install_loader'][0]) => void) => void
+        launchInstallLoader: (callback: (value: LauncherEvents['launch_install_loader'][0]) => void) => IpcCleanup
 
-        launchExtractNatives: (callback: () => void) => void
-        extractProgress: (callback: (value: FilesManagerEvents['extract_progress'][0]) => void) => void
-        extractEnd: (callback: (value: FilesManagerEvents['extract_end'][0]) => void) => void
-        launchCopyAssets: (callback: () => void) => void
-        copyProgress: (callback: (value: FilesManagerEvents['copy_progress'][0]) => void) => void
-        copyEnd: (callback: (value: FilesManagerEvents['copy_end'][0]) => void) => void
+        launchExtractNatives: (callback: () => void) => IpcCleanup
+        extractProgress: (callback: (value: FilesManagerEvents['extract_progress'][0]) => void) => IpcCleanup
+        extractEnd: (callback: (value: FilesManagerEvents['extract_end'][0]) => void) => IpcCleanup
+        launchCopyAssets: (callback: () => void) => IpcCleanup
+        copyProgress: (callback: (value: FilesManagerEvents['copy_progress'][0]) => void) => IpcCleanup
+        copyEnd: (callback: (value: FilesManagerEvents['copy_end'][0]) => void) => IpcCleanup
 
-        launchPatchLoader: (callback: () => void) => void
-        patchProgress: (callback: (value: PatcherEvents['patch_progress'][0]) => void) => void
-        patchError: (callback: (value: PatcherEvents['patch_error'][0]) => void) => void
-        patchEnd: (callback: (value: PatcherEvents['patch_end'][0]) => void) => void
+        launchPatchLoader: (callback: () => void) => IpcCleanup
+        patchProgress: (callback: (value: PatcherEvents['patch_progress'][0]) => void) => IpcCleanup
+        patchError: (callback: (value: PatcherEvents['patch_error'][0]) => void) => IpcCleanup
+        patchEnd: (callback: (value: PatcherEvents['patch_end'][0]) => void) => IpcCleanup
 
-        launchCheckJava: (callback: () => void) => void
-        javaInfo: (callback: (value: JavaEvents['java_info'][0]) => void) => void
+        launchCheckJava: (callback: () => void) => IpcCleanup
+        javaInfo: (callback: (value: JavaEvents['java_info'][0]) => void) => IpcCleanup
 
-        launchClean: (callback: () => void) => void
-        cleanProgress: (callback: (value: CleanerEvents['clean_progress'][0]) => void) => void
-        cleanEnd: (callback: (value: CleanerEvents['clean_end'][0]) => void) => void
-        launchLaunch: (callback: (value: LauncherEvents['launch_launch'][0]) => void) => void
-        launched: (callback: () => void) => void
+        launchClean: (callback: () => void) => IpcCleanup
+        cleanProgress: (callback: (value: CleanerEvents['clean_progress'][0]) => void) => IpcCleanup
+        cleanEnd: (callback: (value: CleanerEvents['clean_end'][0]) => void) => IpcCleanup
+        launchLaunch: (callback: (value: LauncherEvents['launch_launch'][0]) => void) => IpcCleanup
+        launched: (callback: () => void) => IpcCleanup
 
-        launchData: (callback: (value: LauncherEvents['launch_data'][0]) => void) => void
-        launchClose: (callback: (value: any) => void) => void
-        launchDebug: (callback: (value: LauncherEvents['launch_debug'][0]) => void) => void
-        patchDebug: (callback: (value: PatcherEvents['patch_debug'][0]) => void) => void
+        launchData: (callback: (value: LauncherEvents['launch_data'][0]) => void) => IpcCleanup
+        launchClose: (callback: (value: number) => void) => IpcCleanup
+        launchDebug: (callback: (value: LauncherEvents['launch_debug'][0]) => void) => IpcCleanup
+        patchDebug: (callback: (value: PatcherEvents['patch_debug'][0]) => void) => IpcCleanup
       }
       settings: {
         get: () => Promise<IGameSettings>
@@ -169,7 +176,11 @@ export const bootstraps = {
 export const game = {
   launch: async (payload: { account: Account; settings: IGameSettings, profileSlug: string }) => await window.api.game.launch(payload),
   openModsFolder: async (profileSlug: string) => await window.api.game.openModsFolder(profileSlug),
-  uninstallProfile: async (profileSlug: string) => await window.api.game.uninstallProfile(profileSlug),
+  uninstall: async (profileSlug: string) => await window.api.game.uninstall(profileSlug),
+  mods: {
+    list: async (profileSlug: string) => await window.api.game.mods.list(profileSlug),
+    toggle: async (profileSlug: string, name: string) => await window.api.game.mods.toggle(profileSlug, name)
+  },
   launchComputeDownload: (callback: () => void) => window.api.game.launchComputeDownload(callback),
   launchDownload: (callback: (value: LauncherEvents['launch_download'][0]) => void) => window.api.game.launchDownload(callback),
   downloadProgress: (callback: (value: DownloaderEvents['download_progress'][0]) => void) => window.api.game.downloadProgress(callback),
@@ -208,5 +219,3 @@ export const settings = {
 export const system = {
   getInfo: () => window.api.system.getInfo()
 }
-
-

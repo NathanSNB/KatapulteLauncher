@@ -62,8 +62,9 @@
     }
 
     &.active {
-      background: rgba(255, 87, 34, 0.15);
+      background: linear-gradient(135deg, rgba(0, 142, 204, 0.24), rgba(126, 87, 194, 0.24));
       color: var(--primary);
+      box-shadow: inset 3px 0 0 var(--primary);
     }
   }
 }
@@ -221,6 +222,80 @@ input[type="range"] {
   font-size: 12px;
   color: #aaa;
   margin-top: -5px;
+}
+
+.mods-description {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: -8px 0 20px;
+}
+
+.mods-section {
+  margin-top: 22px;
+
+  h4 {
+    color: #ddd;
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+}
+
+.mods-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mods-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #eee;
+  font-size: 13px;
+
+  &.server-mod {
+    border-color: rgba(0, 142, 204, 0.35);
+  }
+}
+
+.mod-badge {
+  color: #8edbff;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mod-toggle {
+  min-width: 48px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.2);
+  color: #aaa;
+  cursor: pointer;
+
+  &.enabled {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+  }
+}
+
+.btn-uninstall-game {
+  margin-top: 20px;
+  color: #ff9c9c;
+  border-color: rgba(255, 80, 80, 0.45);
+  background: rgba(110, 20, 20, 0.18);
 }
 
 /* Java Custom Path */

@@ -221,6 +221,7 @@
             <nav>
               <button class="btn nav-btn active" data-tab="game"><i class="fa-fw fa-solid fa-cubes"></i><span>Jeu</span></button>
               <button class="btn nav-btn" data-tab="skin"><i class="fa-fw fa-solid fa-shirt"></i><span>Skin</span></button>
+              <button class="btn nav-btn" data-tab="mods"><i class="fa-fw fa-solid fa-puzzle-piece"></i><span>Mods</span></button>
               <button class="btn nav-btn" data-tab="account"><i class="fa-fw fa-solid fa-user"></i><span>Compte</span></button>
             </nav>
             
@@ -245,12 +246,10 @@
                   <div class="slider-fill" id="ram-track-fill"></div>
 
                   <input type="range" id="ram-min" min="0.5" max="16" step="0.5" value="2" />
-                  <input type="range" id="ram-max" min="0.5" max="16" step="0.5" value="8" />
                 </div>
 
                 <div class="ram-labels">
-                  <span id="ram-min-label">2 GB</span>
-                  <span id="ram-max-label">8 GB</span>
+                  <span id="ram-min-label">4 GB</span>
                 </div>
               </div>
 
@@ -279,6 +278,19 @@
                   </select>
                 </div>
               </div>
+            </section>
+
+            <section id="tab-mods" class="tab-content mods-management">
+              <h3>Gestion des mods</h3>
+              <p class="mods-description">Les mods serveur sont obligatoires. Les mods personnels peuvent être activés ou désactivés avant le lancement.</p>
+              <section class="mods-section">
+                <h4>Mods du serveur</h4>
+                <div id="server-mods-list" class="mods-list"></div>
+              </section>
+              <section class="mods-section">
+                <h4>Mods personnels</h4>
+                <div id="client-mods-list" class="mods-list"></div>
+              </section>
             </section>
 
             <section class="tab-content skin-management" id="tab-skin">
@@ -349,6 +361,9 @@
                   </a>
                   <button id="btn-logout" class="btn btn-danger"><i class="fa-fw fa-solid fa-right-from-bracket"></i><span>Déconnexion</span></button>
                 </div>
+                <button id="btn-uninstall-game" class="btn btn-uninstall-game">
+                  <i class="fa-fw fa-solid fa-trash"></i><span>Désinstaller les fichiers du jeu</span>
+                </button>
               </div>
             </section>
           </main>
@@ -358,6 +373,7 @@
 
     <div id="custom-dialog" class="dialog-overlay hidden">
       <div class="dialog-box">
+        <button id="dialog-close" class="dialog-close" type="button" aria-label="Fermer"><i class="fa-solid fa-xmark"></i></button>
         <h3 id="dialog-title" class="hidden">Notification</h3>
         <p id="dialog-message"></p>
         <div id="dialog-buttons" class="dialog-actions"></div>
@@ -368,4 +384,3 @@
     <img src="/images/bg.png" alt="default background preload" style="display: none" />
   </body>
 </html>
-
