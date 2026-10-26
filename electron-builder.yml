@@ -32,14 +32,13 @@ win:
   icon: build/icon.ico
 
 nsis:
-  oneClick: false
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
+  allowToChangeInstallationDirectory: false
   shortcutName: 'Katapulte'
   createDesktopShortcut: true
   createStartMenuShortcut: true
   deleteAppDataOnUninstall: true
-  license: build/license.rtf
   artifactName: '${productName} Setup ${version}.${ext}'
 
 mac:

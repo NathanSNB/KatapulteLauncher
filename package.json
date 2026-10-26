@@ -4,7 +4,7 @@
   "author": "Nathan & KatapulteDev",
   "description": "Katapulte Launcher",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.1.2",
   "license": "MIT",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -13,7 +13,8 @@
     "build:win": "vite build && electron-builder --win",
     "build:mac": "vite build && electron-builder --mac",
     "build:mac-universal": "vite build && electron-builder --mac --universal",
-    "build:lin": "vite build && electron-builder --linux"
+    "build:lin": "vite build && electron-builder --linux",
+    "test:mod-sync": "node --test scripts/test-mod-sync.mjs"
   },
   "dependencies": {
     "dompurify": "^3.4.2",

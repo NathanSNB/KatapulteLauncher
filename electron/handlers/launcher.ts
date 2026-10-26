@@ -22,6 +22,11 @@ interface IServerManifestFile {
   path?: string
   name?: string
   type?: string
+  url?: string
+  required?: boolean
+  mandatory?: boolean
+  optional?: boolean
+  sha1?: string
 }
 
 interface IServerModsState {
@@ -41,6 +46,21 @@ let hashCacheWriteTimer: NodeJS.Timeout | null = null
 let hashCacheWriteQueue: Promise<void> = Promise.resolve()
 let hashFunctionPatched = false
 let forgeLoaderResolutionPatched = false
+const SERVER_MOD_SYNC_TIMEOUT_MS = 30_000
+const SERVER_MOD_SYNC_TOTAL_TIMEOUT_MS = 120_000
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([operation, timeoutPromise])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
 
 async function prepareFileHashCache(profileSlug: string): Promise<void> {
   const nextCachePath = path.join(getProfileRoot(profileSlug), '.katapulte-file-hashes.json')
@@ -217,29 +237,89 @@ function normalizeModName(value: string): string {
   return path.basename(value).toLowerCase().replace(/\.disabled$/, '')
 }
 
-async function fetchServerManifest(profileSlug: string): Promise<Set<string>> {
-  const response = await fetch(`${ADMINTOOL_URL}/api/files-updater/${encodeURIComponent(profileSlug)}`)
+async function fetchServerManifestFiles(profileSlug: string): Promise<IServerManifestFile[]> {
+  const response = await fetch(`${ADMINTOOL_URL}/api/files-updater/${encodeURIComponent(profileSlug)}`, {
+    signal: AbortSignal.timeout(SERVER_MOD_SYNC_TIMEOUT_MS)
+  })
   if (!response.ok) {
     throw new Error(`Impossible de télécharger le manifeste des mods (HTTP ${response.status})`)
   }
 
-  const manifest = (await response.json()) as { files?: IServerManifestFile[] }
+  const manifestData = (await response.json()) as { files?: IServerManifestFile[] }
+  console.log('[MODS DEBUG] Manifeste reçu :', JSON.stringify(manifestData))
+  return manifestData.files ?? []
+}
+
+function isModFile(file: IServerManifestFile): boolean {
+  const fileType = (file.type ?? '').toUpperCase()
+  const filePath = (file.path ?? '').replaceAll('\\', '/').toLowerCase()
+  const fileName = (file.name ?? '').toLowerCase()
+  return fileType === 'MOD' || (filePath.startsWith('mods/') && fileName.endsWith('.jar'))
+}
+
+function getServerModNames(files: IServerManifestFile[]): Set<string> {
   return new Set(
-    (manifest.files ?? [])
-      .filter((file) => {
-        const manifestPath = (file.path ?? file.name ?? '').replaceAll('\\', '/').toLowerCase()
-        return (file.type ?? '').toUpperCase() === 'MOD' || manifestPath.startsWith('mods/') || manifestPath.includes('/mods/')
-      })
-      .map((file) => normalizeModName(file.path ?? file.name ?? ''))
-      .filter((name) => name.endsWith('.jar'))
+    files
+      .filter(isModFile)
+      .map((file) => normalizeModName(file.name ?? file.path ?? ''))
   )
 }
 
-async function synchronizeServerMods(profileSlug: string, serverFiles?: Set<string>) {
-  const modsPath = getModsPath(profileSlug)
+async function downloadServerFile(
+  file: IServerManifestFile,
+  gameDir: string,
+  targetDirectory: string
+): Promise<void> {
+  const fileName = file.name
+  if (!fileName) throw new Error('Un fichier obligatoire du manifeste ne possède aucun nom')
+  if (!file.url) throw new Error(`Le fichier obligatoire ${fileName} ne possède aucune URL de téléchargement`)
+
+  const url = new URL(file.url, `${ADMINTOOL_URL}/`).toString()
+  const relativeDirectory = targetDirectory || file.path || ''
+  const targetPath = path.join(gameDir, relativeDirectory, fileName)
+  const temporaryPath = `${targetPath}.download`
+  if (file.sha1) {
+    try {
+      if (await emlUtils.getFileHash(targetPath) === file.sha1) return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+
+  const response = await fetch(url, { signal: AbortSignal.timeout(SERVER_MOD_SYNC_TIMEOUT_MS) })
+  if (!response.ok) throw new Error(`Impossible de télécharger ${fileName} (HTTP ${response.status})`)
+
+  try {
+    const data = Buffer.from(await response.arrayBuffer())
+    await fsp.mkdir(path.dirname(targetPath), { recursive: true })
+    await fsp.writeFile(temporaryPath, data)
+    await fsp.rename(temporaryPath, targetPath)
+  } finally {
+    await fsp.rm(temporaryPath, { force: true })
+  }
+}
+
+async function synchronizeServerMods(profileSlug: string, manifestFiles?: IServerManifestFile[]) {
+  const gameDir = getProfileRoot(profileSlug)
+  const modsPath = path.join(gameDir, 'mods')
   const statePath = getServerModsStatePath(profileSlug)
   await fsp.mkdir(modsPath, { recursive: true })
-  const officialServerFiles = serverFiles ?? await fetchServerManifest(profileSlug)
+  const files = manifestFiles ?? await fetchServerManifestFiles(profileSlug)
+  const detectedMods = files.filter(isModFile)
+  const configFiles = files.filter((file) => (file.type ?? '').toUpperCase() === 'CONFIG')
+  console.log(`[MODS SYNC] ${detectedMods.length} mods détectés via type=="MOD"`)
+  console.log(
+    '[MODS DEBUG] Mods détectés :',
+    detectedMods.map((file) => file.name)
+  )
+  console.log(
+    '[MODS DEBUG] Configurations détectées :',
+    JSON.stringify(configFiles.map((file) => file.path ?? file.name ?? ''))
+  )
+  logger.log(
+    `Synchronizing ${detectedMods.length} server mods and ${configFiles.length} configs into ${gameDir}`
+  )
+  const officialServerFiles = getServerModNames(detectedMods)
 
   let previousServerFiles: string[] = []
   let hasPreviousState = false
@@ -267,6 +347,13 @@ async function synchronizeServerMods(profileSlug: string, serverFiles?: Set<stri
         }
       }
     }
+  }
+
+  for (const mod of detectedMods) {
+    await downloadServerFile(mod, gameDir, 'mods')
+  }
+  for (const config of configFiles) {
+    await downloadServerFile(config, gameDir, config.path ?? '')
   }
 
   await fsp.writeFile(statePath, JSON.stringify({ files: [...officialServerFiles] }, null, 2))
@@ -444,7 +531,11 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
     })
 
     try {
-      await synchronizeServerMods(profileSlug)
+      await withTimeout(
+        synchronizeServerMods(profileSlug),
+        SERVER_MOD_SYNC_TOTAL_TIMEOUT_MS,
+        'La synchronisation des mods a dépassé le délai autorisé'
+      )
       await launcher.launch()
     } catch (err) {
       logger.error('Launcher error:', err)
@@ -472,8 +563,9 @@ export function registerLauncherHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('mods:list', async (_event, payload: { profileSlug: string }): Promise<IModEntry[]> => {
     const modsPath = getModsPath(payload.profileSlug)
-    const managedMods = await fetchServerManifest(payload.profileSlug)
-    await synchronizeServerMods(payload.profileSlug, managedMods)
+    const manifestFiles = await fetchServerManifestFiles(payload.profileSlug)
+    const managedMods = getServerModNames(manifestFiles)
+    await synchronizeServerMods(payload.profileSlug, manifestFiles)
     await fsp.mkdir(modsPath, { recursive: true })
     const entries = await fsp.readdir(modsPath, { withFileTypes: true })
     const mods = await Promise.all(

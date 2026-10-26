@@ -28,3 +28,4 @@ release
 dist-electron/preload.js
 
 .github/copilot-instructions.md
+.scripts/*
